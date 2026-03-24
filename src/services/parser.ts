@@ -541,12 +541,162 @@ function parseWinamaxHand(block: string): HandHistory | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// IGNITION / BODOG
+// ─────────────────────────────────────────────────────────────────────────────
+function parseIgnitionHand(block: string): HandHistory | null {
+  const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 5) return null;
+
+  const header = lines[0];
+  const handId    = header.match(/Hand #(\d+)/)?.[1] || '0';
+  const stakesParts = header.match(/\((\d[\d,]*)\/(\d[\d,]*)\)/);
+  const stakes    = stakesParts ? `${stakesParts[1].replace(/,/g,'')}/${stakesParts[2].replace(/,/g,'')}` : 'N/A';
+  const tournamentMatch = header.match(/Tournament #(\d+)/);
+
+  // Strip [ME] tag to get canonical player name
+  const normName = (s: string) => s.replace(/\s*\[ME\]/i, '').trim();
+  const ignNum   = (s: string) => parseInt(s.replace(/,/g, ''), 10);
+
+  const players:  Player[]       = [];
+  const actions:  PlayerAction[] = [];
+  const board:    string[]       = [];
+  let currentStreet: PlayerAction['street'] = 'PREFLOP';
+  let totalAnteInPot = 0;
+  let holesDealt     = false; // used to distinguish blind all-in vs action all-in
+  let inSummary      = false;
+
+  for (const line of lines) {
+    if (line.startsWith('*** SUMMARY ***')) { inSummary = true; currentStreet = 'SHOWDOWN'; continue; }
+    if (inSummary) continue;
+
+    // ── Seats ──────────────────────────────────────────────────────────────
+    // "Seat 644: UTG (242,664 in chips)"  /  "Seat 803: UTG+5 [ME] (88,888 in chips)"
+    const seatM = line.match(/^Seat \d+: (.+?) \(([\d,]+) in chips\)/);
+    if (seatM) {
+      const rawName = seatM[1].trim();
+      const name    = normName(rawName);
+      const isHero  = /\[ME\]/i.test(rawName);
+      const stack   = ignNum(seatM[2]);
+      players.push({ seat: players.length + 1, name, stack, initialStack: stack, isHero, position: '', isActive: true, cards: [] });
+      continue;
+    }
+
+    // ── Street markers ──────────────────────────────────────────────────────
+    if (line.startsWith('*** HOLE CARDS ***'))  { holesDealt = true; currentStreet = 'PREFLOP'; continue; }
+    if (line.startsWith('*** FLOP ***'))  { currentStreet = 'FLOP';  const m = line.match(/\[([^\]]+)\]/); if (m) board.push(...parseCards(m[1])); continue; }
+    if (line.startsWith('*** TURN ***'))  { currentStreet = 'TURN';  const ms = [...line.matchAll(/\[([^\]]+)\]/g)]; const m = ms[ms.length-1]; if (m) board.push(...parseCards(m[1]).slice(-1)); continue; }
+    if (line.startsWith('*** RIVER ***')) { currentStreet = 'RIVER'; const ms = [...line.matchAll(/\[([^\]]+)\]/g)]; const m = ms[ms.length-1]; if (m) board.push(...parseCards(m[1]).slice(-1)); continue; }
+
+    // ── Skip noise lines ────────────────────────────────────────────────────
+    if (/: (?:Set dealer|Table leave|Table enter|Sit out|Re-join|Ranking|Stand|Prize Cash)/i.test(line)) continue;
+
+    // ── All action lines follow "NAME [ME]? : REST" pattern ─────────────────
+    const colonIdx = line.indexOf(' : ');
+    if (colonIdx === -1) continue;
+
+    const rawActor  = line.slice(0, colonIdx).trim();
+    const actorName = normName(rawActor);
+    const rest      = line.slice(colonIdx + 3).trim();
+    const player    = players.find(p => p.name === actorName);
+
+    // Hole cards: "Card dealt to a spot [3c 4c]"
+    const cardM = rest.match(/^Card dealt to a spot \[([^\]]+)\]/i);
+    if (cardM && player) { player.cards = parseCards(cardM[1]); continue; }
+
+    // Ante: "Ante chip 2400"
+    const anteM = rest.match(/^Ante chip ([\d,]+)/i);
+    if (anteM && player) {
+      const amt = ignNum(anteM[1]);
+      player.initialStack -= amt; player.stack = player.initialStack; totalAnteInPot += amt;
+      continue;
+    }
+
+    // Small blind / Big blind
+    const sbM = rest.match(/^Small blind ([\d,]+)/i);
+    if (sbM) { actions.push({ playerName: actorName, type: 'POST_SB', amount: ignNum(sbM[1]), street: currentStreet }); continue; }
+    const bbM = rest.match(/^Big blind ([\d,]+)/i);
+    if (bbM) { actions.push({ playerName: actorName, type: 'POST_BB', amount: ignNum(bbM[1]), street: currentStreet }); continue; }
+
+    // Return uncalled portion
+    const uncalledM = rest.match(/^Return uncalled portion of bet ([\d,]+)/i);
+    if (uncalledM) { actions.push({ playerName: actorName, type: 'UNCALLED_RETURN', amount: ignNum(uncalledM[1]), street: currentStreet }); continue; }
+
+    // Hand Result / Side Pot (winner)
+    const resultM = rest.match(/^Hand Result(?:-Side Pot)? ([\d,]+)/i);
+    if (resultM) { actions.push({ playerName: actorName, type: 'COLLECTED', amount: ignNum(resultM[1]), street: currentStreet }); continue; }
+
+    // Showdown: "Showdown [cards] (rank)"
+    const showM = rest.match(/^Showdown \[([^\]]+)\]/i);
+    if (showM) { actions.push({ playerName: actorName, type: 'SHOWS', cards: parseCards(showM[1]), street: currentStreet }); continue; }
+
+    // Mucks or "Does not show" — cards still visible in HH, treat as SHOWS
+    const mucksM = rest.match(/^(?:Mucks|Does not show) \[([^\]]+)\]/i);
+    if (mucksM) { actions.push({ playerName: actorName, type: 'SHOWS', cards: parseCards(mucksM[1]), street: currentStreet }); continue; }
+
+    // Folds (plain, timeout, disconnect variants)
+    if (/^Folds?(?:\(|$)/i.test(rest) || /^Fold(?:\(|$)/i.test(rest)) {
+      actions.push({ playerName: actorName, type: 'FOLD', amount: 0, street: currentStreet }); continue;
+    }
+
+    // Check
+    if (/^Checks?$/i.test(rest)) {
+      actions.push({ playerName: actorName, type: 'CHECK', amount: 0, street: currentStreet }); continue;
+    }
+
+    // Call: "Call 6000"
+    const callM = rest.match(/^Call ([\d,]+)/i);
+    if (callM) { actions.push({ playerName: actorName, type: 'CALL', amount: ignNum(callM[1]), street: currentStreet }); continue; }
+
+    // All-in raise: "All-in(raise) 61288 to 61288"
+    const allinRaiseM = rest.match(/^All-in\(raise\) [\d,]+ to ([\d,]+)/i);
+    if (allinRaiseM) { actions.push({ playerName: actorName, type: 'RAISE', amount: ignNum(allinRaiseM[1]), street: currentStreet }); continue; }
+
+    // All-in without (raise): blind post all-in OR call all-in
+    const allinM = rest.match(/^All-in ([\d,]+)$/i);
+    if (allinM) {
+      const amt  = ignNum(allinM[1]);
+      const type: ActionType = !holesDealt ? 'POST_BB' : 'CALL';
+      actions.push({ playerName: actorName, type, amount: amt, street: currentStreet }); continue;
+    }
+
+    // Raise: "Raises 30000 to 30000"
+    const raiseM = rest.match(/^Raises? [\d,]+ to ([\d,]+)/i);
+    if (raiseM) { actions.push({ playerName: actorName, type: 'RAISE', amount: ignNum(raiseM[1]), street: currentStreet }); continue; }
+
+    // Bet: "Bets 12000"
+    const betM = rest.match(/^Bets? ([\d,]+)/i);
+    if (betM) { actions.push({ playerName: actorName, type: 'BET', amount: ignNum(betM[1]), street: currentStreet }); continue; }
+  }
+
+  if (players.length === 0) return null;
+
+  // Positions are encoded in player names — map to standard labels
+  const POS_MAP: Record<string, string> = {
+    'Dealer': 'BTN', 'Small Blind': 'SB', 'Big Blind': 'BB',
+    'UTG': 'UTG', 'UTG+1': 'UTG+1', 'UTG+2': 'UTG+2',
+    'UTG+3': 'UTG+3', 'UTG+4': 'UTG+4', 'UTG+5': 'UTG+5',
+  };
+  players.forEach(p => { p.position = POS_MAP[p.name] ?? p.name; });
+
+  const dealerPlayer = players.find(p => p.name === 'Dealer');
+  const buttonSeat   = dealerPlayer?.seat ?? 1;
+
+  return {
+    id: handId, room: 'Bodog/Ignition', gameType: "Hold'em No Limit", stakes,
+    tournamentId: tournamentMatch?.[1],
+    players, board, actions, totalPot: totalAnteInPot, buttonSeat,
+    summary: buildSummary(players, actions),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FORMAT DETECTION & ENTRY POINT
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RoomFormat = 'pokerstars' | 'ggpoker' | 'partypoker' | '888' | 'wpn' | 'winamax';
+type RoomFormat = 'pokerstars' | 'ggpoker' | 'partypoker' | '888' | 'wpn' | 'winamax' | 'ignition';
 
 function detectFormat(text: string): RoomFormat {
+  if (/Ignitionpoker\.com Hand #|Ignition Hand #|Bodog Hand #/i.test(text)) return 'ignition';
   if (text.includes('PokerStars Hand #')) return 'pokerstars';
   // GGPoker: "Poker Hand #TM..." or "Poker Hand #HD..." (no "PokerStars" prefix)
   if (/^Poker Hand #[A-Z]/m.test(text) || /GGPoker.*Hand #|PokerStars.*GGPoker/i.test(text)) return 'ggpoker';
@@ -566,6 +716,7 @@ function splitBlocks(text: string, format: RoomFormat): string[] {
     '888':      /(?=888poker Hand History for Game)/i,
     wpn:        /(?=Game #\d)/i,
     winamax:    /(?=Winamax Poker)/i,
+    ignition:   /(?=Ignitionpoker\.com Hand #|Ignition Hand #|Bodog Hand #)/i,
   };
   return text.split(splitters[format]).filter(b => b.trim().length > 50);
 }
@@ -581,6 +732,7 @@ export const parseHandHistory = (rawText: string): HandHistory[] => {
     '888':      parse888Hand,
     wpn:        parseWPNHand,
     winamax:    parseWinamaxHand,
+    ignition:   parseIgnitionHand,
   };
 
   const results: HandHistory[] = [];
