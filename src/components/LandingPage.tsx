@@ -486,39 +486,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
               </div>
             </div>
 
-            {/* Mini table visual */}
+            {/* App preview screenshot */}
             <div className="flex items-center justify-center">
-              <div className="relative w-full max-w-sm aspect-square">
-                <div className="absolute inset-8 rounded-full bg-gradient-to-br from-[#1a4a2e] to-[#0d2e1c] border-4 border-[#2d1a08] shadow-[inset_0_0_60px_rgba(0,0,0,0.8),0_0_40px_rgba(0,0,0,0.5)]" />
-                <div className="absolute inset-8 rounded-full bg-emerald-500/5 blur-xl" />
-                <div className="absolute inset-0 flex items-center justify-center gap-1.5">
-                  {['A♠','K♥','Q♦'].map((c, i) => (
-                    <div key={i} className="w-9 h-12 bg-white rounded-lg flex items-center justify-center shadow-lg text-[13px] font-black">
-                      <span className={c.includes('♥') || c.includes('♦') ? 'text-red-500' : 'text-slate-900'}>{c}</span>
-                    </div>
-                  ))}
-                </div>
-                {[
-                  { top: '4%',  left: '50%',  tx: '-50%',  label: 'BTN', color: 'text-emerald-400' },
-                  { top: '50%', left: '95%',  tx: '-100%', label: 'SB',  color: 'text-blue-400'   },
-                  { top: '88%', left: '65%',  tx: '-50%',  label: 'BB',  color: 'text-blue-400'   },
-                  { top: '88%', left: '35%',  tx: '-50%',  label: 'UTG', color: 'text-red-400'    },
-                  { top: '50%', left: '5%',   tx: '0%',    label: 'CO',  color: 'text-emerald-400'},
-                ].map(seat => (
-                  <div key={seat.label}
-                    className="absolute bg-black/80 border border-white/15 rounded-xl px-2 py-1 flex items-center gap-1.5"
-                    style={{ top: seat.top, left: seat.left, transform: `translate(${seat.tx}, -50%)` }}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
-                    <span className={`text-[9px] font-black ${seat.color}`}>{seat.label}</span>
-                  </div>
-                ))}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-8 bg-yellow-400/20 border border-yellow-400/30 rounded-full px-3 py-1">
-                  <span className="text-[9px] font-black text-yellow-300">POT 240bb</span>
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div onClick={scrollToForm}
-                    className="w-12 h-12 rounded-full bg-blue-600/80 border border-blue-400/40 flex items-center justify-center shadow-lg shadow-blue-500/30 cursor-pointer hover:bg-blue-500/80 transition-all">
-                    <Play size={18} className="text-white ml-0.5" />
+              <div className="relative w-full rounded-2xl overflow-hidden border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.7)] cursor-pointer group" onClick={scrollToForm}>
+                <img
+                  src="/app-preview.png"
+                  alt="Spot Replay — replayer de poker"
+                  className="w-full h-auto block"
+                />
+                {/* Play overlay on hover */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-blue-600/90 border border-blue-400/40 flex items-center justify-center shadow-lg shadow-blue-500/40">
+                    <Play size={22} className="text-white ml-1" />
                   </div>
                 </div>
               </div>
