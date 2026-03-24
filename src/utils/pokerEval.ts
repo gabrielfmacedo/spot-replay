@@ -130,6 +130,34 @@ export function estimateEquity(
   };
 }
 
+/**
+ * Returns the 5 card codes that form the best hand from holeCards + board.
+ * Useful for highlighting which board cards are part of the winning hand.
+ */
+export function getBestFiveCards(holeCards: string[], board: string[]): string[] | null {
+  const allCodes = [...holeCards, ...board];
+  const all = allCodes.map(pc);
+  if (all.some(c => c.r < 0) || all.length < 5) return null;
+
+  const n = all.length;
+  let bestScore = -1;
+  let bestIndices: number[] = [];
+
+  for (let a = 0; a < n-4; a++)
+  for (let b = a+1; b < n-3; b++)
+  for (let c = b+1; c < n-2; c++)
+  for (let d = c+1; d < n-1; d++)
+  for (let e = d+1; e < n; e++) {
+    const sc = eval5([all[a], all[b], all[c], all[d], all[e]]);
+    if (sc > bestScore) {
+      bestScore = sc;
+      bestIndices = [a, b, c, d, e];
+    }
+  }
+
+  return bestIndices.map(i => allCodes[i]);
+}
+
 /** Board texture description */
 export function getBoardTexture(board: string[]): string | null {
   if (board.length < 3) return null;

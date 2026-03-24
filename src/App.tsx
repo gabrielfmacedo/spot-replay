@@ -36,7 +36,7 @@ import FloatingHandNote from './components/FloatingHandNote';
 import type { PlayerNoteData } from './components/PlayerNoteModal';
 import { lastNoteText, migratePlayerNote } from './components/PlayerNoteModal';
 import { encodeHand, getSharedHandFromURL } from './utils/shareHand';
-import { evaluateCards, estimateEquity, getBoardTexture } from './utils/pokerEval';
+import { evaluateCards, getBoardTexture, getBestFiveCards } from './utils/pokerEval';
 import { THEMES, DEFAULT_THEME, getTheme } from './utils/themes';
 import { supabase } from './services/supabase';
 import {
@@ -923,32 +923,34 @@ const App: React.FC = () => {
     };
   }, [currentTheme]);
 
-  // ── Hero hand name ────────────────────────────────────────────────────────
-  const heroHandName = useMemo(() => {
-    if (!currentHand || gameState.visibleBoard.length < 3) return null;
+  // ── Winning board card highlight ──────────────────────────────────────────
+  // Returns a Set of board card codes that are part of the best 5-card hand.
+  // If a villain has revealed cards, uses the winner's hand; otherwise hero's.
+  const winningBoardCards = useMemo((): Set<string> => {
+    if (!currentHand || gameState.visibleBoard.length < 3) return new Set();
     const hero = currentHand.players.find(p => p.isHero);
-    if (!hero?.cards?.length) return null;
-    return evaluateCards(hero.cards, gameState.visibleBoard)?.name ?? null;
-  }, [currentHand, gameState.visibleBoard]);
+    if (!hero?.cards?.length) return new Set();
 
-  // ── Equity at showdown ────────────────────────────────────────────────────
-  const equityData = useMemo(() => {
-    if (!currentHand) return null;
-    const hero = currentHand.players.find(p => p.isHero);
-    if (!hero?.cards?.length) return null;
-    // Find first opponent with revealed cards in current gameState
-    let oppCards: string[] | null = null;
+    // Collect all players with visible cards
+    let sourceCards = hero.cards;
+    let bestScore = evaluateCards(hero.cards, gameState.visibleBoard)?.score ?? -1;
+
     for (const p of currentHand.players) {
       if (!p.isHero) {
         const ps = gameState.playerStates[p.name];
-        if (ps?.revealedCards?.length === 2) { oppCards = ps.revealedCards; break; }
+        if (ps?.revealedCards?.length === 2) {
+          const sc = evaluateCards(ps.revealedCards, gameState.visibleBoard)?.score ?? -1;
+          if (sc > bestScore) { bestScore = sc; sourceCards = ps.revealedCards; }
+        }
       }
     }
-    if (!oppCards) return null;
-    const eq = estimateEquity(hero.cards, oppCards, gameState.visibleBoard);
-    const heroName = evaluateCards(hero.cards, gameState.visibleBoard)?.name ?? '';
-    const oppName  = evaluateCards(oppCards,   gameState.visibleBoard)?.name ?? '';
-    return { ...eq, heroName, oppName };
+
+    const best5 = getBestFiveCards(sourceCards, gameState.visibleBoard);
+    if (!best5) return new Set();
+
+    // Return only the board cards among the best 5
+    const boardSet = new Set(gameState.visibleBoard);
+    return new Set(best5.filter(c => boardSet.has(c)));
   }, [currentHand, gameState]);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1375,42 +1377,26 @@ const App: React.FC = () => {
                       </div>
                       <div className="flex justify-center items-center gap-1.5 md:gap-2 h-20 md:h-28 w-full">
                         {gameState.visibleBoard.length > 0 ? (
-                          gameState.visibleBoard.map((c: string, i: number) => (
-                            <div key={`${c}-${i}`} className="shadow-2xl">
-                              <Card code={c} size="lg" animate cardStyle={cardStyle} />
-                            </div>
-                          ))
+                          gameState.visibleBoard.map((c: string, i: number) => {
+                            const isWinning = winningBoardCards.has(c);
+                            return (
+                              <div
+                                key={`${c}-${i}`}
+                                className="transition-all duration-300"
+                                style={isWinning ? {
+                                  transform: 'scale(1.12)',
+                                  filter: 'drop-shadow(0 0 8px rgba(250,204,21,0.7)) drop-shadow(0 0 18px rgba(250,204,21,0.35))',
+                                  zIndex: 10,
+                                } : { filter: winningBoardCards.size > 0 ? 'brightness(0.6)' : undefined }}
+                              >
+                                <Card code={c} size="lg" animate cardStyle={cardStyle} />
+                              </div>
+                            );
+                          })
                         ) : (
                           <div className="opacity-[0.05] text-2xl md:text-3xl font-black italic tracking-[0.8em] select-none uppercase">SPOT REPLAY</div>
                         )}
                       </div>
-
-                      {/* Board texture removed */}
-                      {false && boardTexture && (
-                        <div className="flex gap-1 justify-center flex-wrap">
-                          {boardTexture.split(' · ').map(t => (
-                            <span key={t} className="text-[6px] font-black text-slate-500 uppercase bg-white/5 px-1.5 py-0.5 rounded-full tracking-wider">{t}</span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Hero hand name */}
-                      {heroHandName && (
-                        <div className="text-[7px] font-black text-blue-400 uppercase tracking-widest">{heroHandName}</div>
-                      )}
-
-                      {/* Equity bar (when villain cards are revealed) */}
-                      {equityData && (
-                        <div className="flex items-center gap-2 bg-black/60 border border-white/10 rounded-xl px-3 py-1.5 min-w-[220px]">
-                          <span className="text-[7px] font-black text-emerald-400 shrink-0">{equityData.heroName} {equityData.hero}%</span>
-                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
-                            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${equityData.hero}%` }} />
-                            <div className="h-full bg-slate-600 transition-all" style={{ width: `${equityData.tie}%` }} />
-                            <div className="h-full bg-red-500 transition-all" style={{ width: `${equityData.opp}%` }} />
-                          </div>
-                          <span className="text-[7px] font-black text-red-400 shrink-0">{equityData.opp}% {equityData.oppName}</span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Player seats */}
