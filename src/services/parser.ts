@@ -378,114 +378,138 @@ function parse888Hand(block: string): HandHistory | null {
   if (lines.length < 5) return null;
 
   const handId = block.match(/Game (\d+)/i)?.[1] || '0';
-  const stakesMatch = block.match(/\$?([\d.]+)\/\$?([\d.]+) Blinds/i) || block.match(/\$([\d.]+)\/\$([\d.]+)/);
-  const stakes = stakesMatch ? `${stakesMatch[1]}/${stakesMatch[2]} USD` : 'N/A';
+  const stakesM = block.match(/([\d]+)\/([\d]+) Blinds/i) || block.match(/\$?([\d.]+)\/\$?([\d.]+)/);
+  const stakes  = stakesM ? `${stakesM[1]}/${stakesM[2]}` : 'N/A';
+  const tournamentMatch = block.match(/Tournament #(\d+)/i);
 
-  const players: Player[] = [];
-  const actions: PlayerAction[] = [];
-  const board: string[] = [];
+  // 888poker uses "." as thousands separator: "3.598" = 3598 chips
+  const p888 = (s: string): number => {
+    const m = s.replace(/\s/g, '').match(/^(\d+)\.(\d{3})$/);
+    return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : parseFloat(s);
+  };
+
+  const players:  Player[]       = [];
+  const actions:  PlayerAction[] = [];
+  const board:    string[]       = [];
   let currentStreet: PlayerAction['street'] = 'PREFLOP';
-  // 888 doesn't always show dealer; infer from SB/BB positions later
+  let totalAnteInPot = 0;
   let buttonSeat = 1;
-  let sbPlayer = '';
-  let nextIsBoard = false;
+  let sbPlayer   = '';
+  let inSummary  = false;
 
   for (const line of lines) {
-    // Seat: "Seat 1: PlayerName ( $10.00 USD )"
-    const seatMatch = line.match(/^Seat (\d+): (.+?) \(\s*\$?([\d.]+)/i);
-    if (seatMatch && !line.includes('is the button') && !line.includes('sitting out')) {
-      players.push({ seat: parseInt(seatMatch[1]), name: seatMatch[2].trim(), stack: parseFloat(seatMatch[3]), initialStack: parseFloat(seatMatch[3]), isHero: false, position: '', isActive: true, cards: [] });
-      continue;
-    }
+    if (/^\*\* Summary/i.test(line)) { inSummary = true; currentStreet = 'SHOWDOWN'; continue; }
+    if (/^\*\* First runout/i.test(line)) continue;
 
-    // Dealer / button
-    const dealerMatch = line.match(/^Seat (\d+) is the dealer/i) || line.match(/^Dealer: Seat (\d+)/i);
-    if (dealerMatch) { buttonSeat = parseInt(dealerMatch[1]); continue; }
-
-    // Hero cards: "** Dealing cards to PlayerName: [As Kh] **" or "Dealt to PlayerName [As Kh]"
-    const dealt1 = line.match(/Dealing (?:cards )?to (.+?)[:] \[(.+?)\]/i);
-    const dealt2 = line.match(/^Dealt to (.+?) \[(.+?)\]/i);
-    const dealt = dealt1 || dealt2;
-    if (dealt) { const p = players.find(p => p.name === dealt[1].trim()); if (p) { p.isHero = true; p.cards = parseCards(dealt[2]); } continue; }
-
-    // Streets: "[ PREFLOP ]", "[ FLOP ]", "[ TURN ]", "[ RIVER ]"
-    // or "------ HOLE CARDS ------", "------ FLOP ------"
-    if (/\[ ?FLOP ?\]|--+\s*FLOP\s*--+/i.test(line)) { currentStreet = 'FLOP'; nextIsBoard = true; continue; }
-    if (/\[ ?TURN ?\]|--+\s*TURN\s*--+/i.test(line)) { currentStreet = 'TURN'; nextIsBoard = true; continue; }
-    if (/\[ ?RIVER ?\]|--+\s*RIVER\s*--+/i.test(line)) { currentStreet = 'RIVER'; nextIsBoard = true; continue; }
-    if (/SHOW DOWN|SHOWDOWN|\*\* Summary/i.test(line)) { currentStreet = 'SHOWDOWN'; nextIsBoard = false; continue; }
-
-    // Board lines that follow a street marker: "[ Ac Kd Qh ]"
-    if (nextIsBoard) {
-      const boardMatch = line.match(/^\[ ?([^\]]+?) ?\]$/);
-      if (boardMatch) {
-        const cards = parseCards(boardMatch[1]);
-        if (currentStreet === 'FLOP' && cards.length === 3) board.push(...cards);
-        else if ((currentStreet === 'TURN' || currentStreet === 'RIVER') && cards.length === 1) board.push(cards[0]);
-        // 888 sometimes puts all 4/5 board cards in TURN/RIVER line
-        else if (currentStreet === 'TURN' && cards.length === 4) board.push(cards[3]);
-        else if (currentStreet === 'RIVER' && cards.length === 5) board.push(cards[4]);
-        nextIsBoard = false;
-        continue;
+    // ── Summary ──────────────────────────────────────────────────────────────
+    if (inSummary) {
+      // "Lov3d2Two shows [ As, Qs ]"
+      const showM = line.match(/^(.+?) shows? \[ ([^\]]+) \]/i);
+      if (showM) {
+        const cards = parseCards(showM[2]);
+        const p = players.find(p => p.name === showM[1].trim());
+        if (p && p.cards.length === 0) p.cards = cards;
+        actions.push({ playerName: showM[1].trim(), type: 'SHOWS', cards, street: currentStreet });
       }
-      nextIsBoard = false;
-    }
-
-    // Inline board: "[ FLOP ] [ Ac Kd Qh ]"
-    const inlineBoard = line.match(/\[ ?([2-9TJQKA][shdc](?:\s+[2-9TJQKA][shdc])+) ?\]/i);
-    if (inlineBoard && (currentStreet === 'FLOP' || currentStreet === 'TURN' || currentStreet === 'RIVER')) {
-      const cards = parseCards(inlineBoard[1]);
-      if (board.length === 0 && cards.length >= 3) board.push(...cards.slice(0, 3));
-      else if (board.length === 3 && cards.length >= 4) board.push(cards[3]);
-      else if (board.length === 4 && cards.length >= 5) board.push(cards[4]);
-    }
-
-    // Collected / wins
-    const collected = line.match(/^(.+?) (?:collected|wins?) (?:a pot of )?\[?\$?([\d.]+)/i);
-    if (collected && !line.startsWith('Seat')) { actions.push({ playerName: collected[1].trim(), type: 'COLLECTED', amount: parseFloat(collected[2]), street: currentStreet }); continue; }
-
-    // Uncalled
-    const uncalled = line.match(/^Uncalled bet \(?\$?([\d.]+)\)? returned to (.+)/i);
-    if (uncalled) { actions.push({ playerName: uncalled[2].trim(), type: 'UNCALLED_RETURN', amount: parseFloat(uncalled[1]), street: currentStreet }); continue; }
-
-    // Blinds: "PlayerName posts small blind [$0.05 USD]" or "PlayerName: posts small blind 0.05"
-    const blind = line.match(/^(.+?)(?::)? posts (small blind|big blind)(?: \[?\$?([\d.]+)\]?)?/i);
-    if (blind) {
-      const type: ActionType = blind[2].toLowerCase().includes('small') ? 'POST_SB' : 'POST_BB';
-      if (type === 'POST_SB') sbPlayer = blind[1].trim();
-      actions.push({ playerName: blind[1].trim(), type, amount: blind[3] ? parseFloat(blind[3]) : 0, street: currentStreet });
+      // "First runout georgieboy collected [ 7.736 ]" or "georgieboy collected [ 7.736 ]"
+      const collM = line.match(/(?:^|\s)(\S+) collected \[ ([\d.]+) \]/i);
+      if (collM) actions.push({ playerName: collM[1].trim(), type: 'COLLECTED', amount: p888(collM[2]), street: currentStreet });
       continue;
     }
 
-    // Actions: "PlayerName: Fold" or "PlayerName: Raise [$0.30 USD]"
-    const act = line.match(/^(.+?): (Fold|Check|Call|Raise|Bet)(?: \[?\$?([\d.]+)(?:\s+USD)?\]?)?(?:\s+to \$?([\d.]+))?/i);
-    if (act) {
-      const name = act[1].trim(); const raw = act[2].toLowerCase();
-      const amount = (act[4] ? parseFloat(act[4]) : 0) || (act[3] ? parseFloat(act[3]) : 0);
-      const type: ActionType = raw === 'fold' ? 'FOLD' : raw === 'check' ? 'CHECK' : raw === 'call' ? 'CALL' : raw === 'bet' ? 'BET' : 'RAISE';
-      actions.push({ playerName: name, type, amount, street: currentStreet }); continue;
+    // ── Button ───────────────────────────────────────────────────────────────
+    const btnM = line.match(/^Seat (\d+) is the (?:button|dealer)/i);
+    if (btnM) { buttonSeat = parseInt(btnM[1]); continue; }
+
+    // ── Seats ────────────────────────────────────────────────────────────────
+    // "Seat 1: Lov3d2Two ( 3.598 )"
+    const seatM = line.match(/^Seat (\d+): (.+?) \(\s*([\d.]+)\s*\)\s*$/);
+    if (seatM) {
+      const stack = p888(seatM[3]);
+      players.push({ seat: parseInt(seatM[1]), name: seatM[2].trim(), stack, initialStack: stack, isHero: false, position: '', isActive: true, cards: [] });
+      continue;
     }
 
-    // Shows
-    const shows = line.match(/^(.+?): shows? \[(.+?)\]/i);
-    if (shows) { actions.push({ playerName: shows[1].trim(), type: 'SHOWS', cards: parseCards(shows[2]), street: currentStreet }); continue; }
+    // ── Dealt ────────────────────────────────────────────────────────────────
+    const dealtM = line.match(/^Dealt to (.+?) \[ ([^\]]+) \]/i);
+    if (dealtM) {
+      const p = players.find(p => p.name === dealtM[1].trim());
+      if (p) { p.isHero = true; p.cards = parseCards(dealtM[2]); }
+      continue;
+    }
+
+    // ── Streets ──────────────────────────────────────────────────────────────
+    if (/\*\* Dealing flop \*\*/i.test(line)) {
+      currentStreet = 'FLOP';
+      const m = line.match(/\[ ([^\]]+) \]/); if (m) board.push(...parseCards(m[1]));
+      continue;
+    }
+    if (/\*\* Dealing turn \*\*/i.test(line)) {
+      currentStreet = 'TURN';
+      const m = line.match(/\[ ([^\]]+) \]/); if (m) { const c = parseCards(m[1]); if (c.length === 1) board.push(c[0]); }
+      continue;
+    }
+    if (/\*\* Dealing river \*\*/i.test(line)) {
+      currentStreet = 'RIVER';
+      const m = line.match(/\[ ([^\]]+) \]/); if (m) { const c = parseCards(m[1]); if (c.length === 1) board.push(c[0]); }
+      continue;
+    }
+    if (/SHOW ?DOWN/i.test(line)) { currentStreet = 'SHOWDOWN'; continue; }
+
+    // ── Antes ────────────────────────────────────────────────────────────────
+    const anteM = line.match(/^(.+?) posts ante \[?([\d.]+)\]?/i);
+    if (anteM) {
+      const p = players.find(p => p.name === anteM[1].trim());
+      const amt = p888(anteM[2]);
+      if (p) { p.initialStack -= amt; p.stack = p.initialStack; totalAnteInPot += amt; }
+      continue;
+    }
+
+    // ── Blinds ───────────────────────────────────────────────────────────────
+    const blindM = line.match(/^(.+?)(?::)? posts (small blind|big blind) \[?([\d.]+)\]?/i);
+    if (blindM) {
+      const type: ActionType = blindM[2].toLowerCase().includes('small') ? 'POST_SB' : 'POST_BB';
+      if (type === 'POST_SB') sbPlayer = blindM[1].trim();
+      actions.push({ playerName: blindM[1].trim(), type, amount: p888(blindM[3]), street: currentStreet });
+      continue;
+    }
+
+    // ── Uncalled ─────────────────────────────────────────────────────────────
+    const uncalledM = line.match(/^Uncalled bet \[?([\d.]+)\]? returned to (.+)/i);
+    if (uncalledM) { actions.push({ playerName: uncalledM[2].trim(), type: 'UNCALLED_RETURN', amount: p888(uncalledM[1]), street: currentStreet }); continue; }
+
+    // ── Actions (no colon: "Anton4397 raises [300]" / "cobratomas folds") ────
+    if (line.startsWith('**') || line.startsWith('#')) continue;
+    const actM = line.match(/^(.+?) (folds?|checks?|calls?|bets?|raises?)(?: \[?([\d.]+)\]?)?(?: to \[?([\d.]+)\]?)?/i);
+    if (actM && players.find(p => p.name === actM[1].trim())) {
+      const name   = actM[1].trim();
+      const raw    = actM[2].toLowerCase();
+      const amount = (actM[4] ? p888(actM[4]) : 0) || (actM[3] ? p888(actM[3]) : 0);
+      const type: ActionType =
+        raw.startsWith('fold')  ? 'FOLD'  :
+        raw.startsWith('check') ? 'CHECK' :
+        raw.startsWith('call')  ? 'CALL'  :
+        raw.startsWith('bet')   ? 'BET'   : 'RAISE';
+      actions.push({ playerName: name, type, amount, street: currentStreet });
+    }
   }
 
   if (players.length === 0) return null;
 
-  // Infer button from SB if not found
-  if (sbPlayer) {
-    const sbP = players.find(p => p.name === sbPlayer);
-    if (sbP && buttonSeat === 1) {
-      // BTN is one seat before SB
-      const sorted = [...players].sort((a, b) => a.seat - b.seat);
-      const sbIdx = sorted.findIndex(p => p.name === sbPlayer);
-      buttonSeat = sorted[(sbIdx - 1 + sorted.length) % sorted.length].seat;
-    }
+  // Infer button from SB if not explicitly set
+  if (sbPlayer && buttonSeat === 1) {
+    const sorted = [...players].sort((a, b) => a.seat - b.seat);
+    const sbIdx  = sorted.findIndex(p => p.name === sbPlayer);
+    if (sbIdx !== -1) buttonSeat = sorted[(sbIdx - 1 + sorted.length) % sorted.length].seat;
   }
 
   assignPositions(players, buttonSeat);
-  return { id: handId, room: '888 Poker', gameType: "Hold'em No Limit", stakes, players, board, actions, totalPot: 0, buttonSeat, summary: buildSummary(players, actions) };
+  return {
+    id: handId, room: '888 Poker', gameType: "Hold'em No Limit", stakes,
+    tournamentId: tournamentMatch?.[1],
+    players, board, actions, totalPot: totalAnteInPot, buttonSeat,
+    summary: buildSummary(players, actions),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
