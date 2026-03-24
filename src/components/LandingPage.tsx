@@ -467,40 +467,30 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
                 title="Pot Odds & Range Builder"
                 desc="Calcule pot odds em tempo real durante o replay e construa ranges com o editor visual integrado." />
             </div>
+
+            {/* App preview screenshot — full width below features */}
+            <div className="mt-16 rounded-2xl overflow-hidden border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.8)]">
+              <img
+                src="/app-preview.png"
+                alt="Spot Replay — replayer de poker"
+                className="w-full h-auto block"
+              />
+            </div>
           </div>
         </section>
 
         {/* ── How it works ───────────────────────────────────────────── */}
         <section className="border-t border-white/5">
-          <div className="max-w-5xl mx-auto px-6 py-24 grid lg:grid-cols-2 gap-16 items-center">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-4">Como funciona</p>
-              <h2 className="text-[26px] font-black text-white mb-10">Em menos de 1 minuto você já está estudando</h2>
-              <div className="space-y-7">
-                <Step n="1" title="Cole o histórico de mãos"
-                  desc="Exporte o .txt do seu cliente (PokerStars, GGPoker etc.) e cole ou importe direto no Spot Replay." />
-                <Step n="2" title="Escolha a mão e assista"
-                  desc="Navegue pelas mãos, use o player para avançar ação por ação ou ir direto para o showdown." />
-                <Step n="3" title="Anote, compartilhe e evolua"
-                  desc="Registre seus erros por street, compartilhe com seu coach e receba feedback com anotações em tempo real." />
-              </div>
-            </div>
-
-            {/* App preview screenshot */}
-            <div className="flex items-center justify-center">
-              <div className="relative w-full rounded-2xl overflow-hidden border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.7)] cursor-pointer group" onClick={scrollToForm}>
-                <img
-                  src="/app-preview.png"
-                  alt="Spot Replay — replayer de poker"
-                  className="w-full h-auto block"
-                />
-                {/* Play overlay on hover */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full bg-blue-600/90 border border-blue-400/40 flex items-center justify-center shadow-lg shadow-blue-500/40">
-                    <Play size={22} className="text-white ml-1" />
-                  </div>
-                </div>
-              </div>
+          <div className="max-w-3xl mx-auto px-6 py-24">
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-4 text-center">Como funciona</p>
+            <h2 className="text-[26px] font-black text-white mb-10 text-center">Em menos de 1 minuto você já está estudando</h2>
+            <div className="space-y-7">
+              <Step n="1" title="Cole o histórico de mãos"
+                desc="Exporte o .txt do seu cliente (PokerStars, GGPoker etc.) e cole ou importe direto no Spot Replay." />
+              <Step n="2" title="Escolha a mão e assista"
+                desc="Navegue pelas mãos, use o player para avançar ação por ação ou ir direto para o showdown." />
+              <Step n="3" title="Anote, compartilhe e evolua"
+                desc="Registre seus erros por street, compartilhe com seu coach e receba feedback com anotações em tempo real." />
             </div>
           </div>
         </section>

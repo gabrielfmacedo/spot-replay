@@ -6,7 +6,7 @@ import {
   Search, X, BarChart2, Calculator,
   Share2, Layers, AlignLeft, NotebookPen, Copy, Link2,
   LogOut, User, Maximize2, Minimize2, Settings2, Shield,
-  ZoomIn, ZoomOut, SlidersHorizontal, ChevronDown, Star, MessageSquare
+  ZoomIn, ZoomOut, SlidersHorizontal, ChevronDown, Star, MessageSquare, ArrowDownUp
 } from 'lucide-react';
 import { HandHistory, PlayerAction, HandNotes as HandNotesMap, HandNote, ActionType, ReplaySession } from './types';
 import { parseHandHistory } from './services/parser';
@@ -29,6 +29,7 @@ import NotificationsPage from './components/NotificationsPage';
 import PlayerNoteModal from './components/PlayerNoteModal';
 import PlayerSeatMinimal from './components/PlayerSeatMinimal';
 import LandingPage from './components/LandingPage';
+import IdeasPage from './components/IdeasPage';
 import AdminPanel from './components/AdminPanel';
 import ProfileModal from './components/ProfileModal';
 import PlayerNoteHistory from './components/PlayerNoteHistory';
@@ -121,6 +122,7 @@ const App: React.FC = () => {
   const [visibleHandsCount,setVisibleHandsCount]= useState(40);
   const [sidebarSearch,    setSidebarSearch]    = useState('');
   const [sidebarFilter,    setSidebarFilter]    = useState<'all' | 'win' | 'lose' | 'fold' | 'star' | 'vpip' | 'pfr' | '3bet' | 'call'>('all');
+  const [handsReversed,    setHandsReversed]    = useState(false);
   // Sprint 1 features
   const [hideResults,      setHideResults]      = useState(false);
   const [isDragOver,       setIsDragOver]       = useState(false);
@@ -184,6 +186,9 @@ const App: React.FC = () => {
   const [shareTarget,      setShareTarget]      = useState<ReplaySession | null>(null);
   const [collabAnnotations, setCollabAnnotations] = useState<Record<string, HandAnnotation[]>>({});
   const [showAISummary,    setShowAISummary]     = useState(false);
+  const [showIdeasPage,    setShowIdeasPage]     = useState(false);
+  const [showUserMenu,     setShowUserMenu]      = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const sidebarListRef  = useRef<HTMLDivElement>(null);
@@ -292,6 +297,16 @@ const App: React.FC = () => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showAppShare]);
+
+  // ── User menu — close on outside click ────────────────────────────────────
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showUserMenu]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -502,7 +517,8 @@ const App: React.FC = () => {
         }
         return true;
       });
-  }, [hands, sidebarFilter, sidebarSearch, handNotes, positionFilter, tagFilter, stackBBFilter, bbValueFilter]);
+    return handsReversed ? filtered.slice().reverse() : filtered;
+  }, [hands, sidebarFilter, sidebarSearch, handNotes, positionFilter, tagFilter, stackBBFilter, bbValueFilter, handsReversed]);
 
   // ── Step effect ───────────────────────────────────────────────────────────
   // Tracks previous hand to distinguish "hand changed" from "toggle changed"
@@ -1190,6 +1206,13 @@ const App: React.FC = () => {
               <SlidersHorizontal size={11} />
               {(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) ? '●' : 'FLT'}
             </button>
+            <button
+              onClick={() => setHandsReversed(v => !v)}
+              title={handsReversed ? 'Ordem: antiga → nova' : 'Ordem: nova → antiga'}
+              className={`p-1.5 rounded-lg border transition-all ${handsReversed ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}
+            >
+              <ArrowDownUp size={11} />
+            </button>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{filteredHandsWithIndex.length} de {hands.length} mãos</span>
@@ -1361,9 +1384,6 @@ const App: React.FC = () => {
             </button>
             {currentUser ? (
               <div className="flex items-center gap-1">
-                <button onClick={() => setShowProfile(true)} className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] text-slate-400 bg-white/5 border border-white/10 hover:text-white hover:border-white/20 transition-colors">
-                  <User size={11} />{currentUser.name.split(' ')[0]}
-                </button>
                 <NotificationBell
                   notifications={notifications}
                   userId={currentUser.id}
@@ -1382,9 +1402,49 @@ const App: React.FC = () => {
                     <Shield size={13} />
                   </button>
                 )}
-                <button onClick={handleLogout} title="Sair" className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-white/10 transition-colors">
-                  <LogOut size={13} />
-                </button>
+                {/* Unified user menu */}
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setShowUserMenu(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-colors border ${showUserMenu ? 'bg-white/10 border-white/20 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/10'}`}
+                  >
+                    <User size={12} />
+                    <span className="hidden lg:inline">{currentUser.name.split(' ')[0]}</span>
+                    <ChevronDown size={10} className={`transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showUserMenu && (
+                    <div className="absolute right-0 top-full mt-2 w-44 bg-[#0a0f1a] border border-white/10 rounded-2xl shadow-2xl z-[300] overflow-hidden py-1">
+                      <button
+                        onClick={() => { setShowProfile(true); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-slate-300 hover:text-white"
+                      >
+                        <User size={12} className="text-slate-500" /> PERFIL
+                      </button>
+                      <a
+                        href="https://wa.me/5521990970439?text=Preciso+de+ajuda+no+Spot+Replay"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setShowUserMenu(false)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-[#25D366] hover:text-[#25D366]"
+                      >
+                        <MessageSquare size={12} /> SUPORTE
+                      </a>
+                      <button
+                        onClick={() => { setShowIdeasPage(true); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-amber-400 hover:text-amber-300"
+                      >
+                        <Star size={12} /> IDEIAS
+                      </button>
+                      <div className="border-t border-white/5 my-1" />
+                      <button
+                        onClick={() => { handleLogout(); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/10 transition-colors text-[11px] font-black text-slate-500 hover:text-red-400"
+                      >
+                        <LogOut size={12} /> SAIR
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <button onClick={() => setShowAuthModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-black uppercase text-white transition-all border border-white/20">
@@ -1830,6 +1890,14 @@ const App: React.FC = () => {
           onClose={() => setShowNotificationsPage(false)}
           onRead={ids => setNotifications(prev => prev.map(n => ids.includes(n.id) ? { ...n, read_at: new Date().toISOString() } : n))}
           onAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))}
+        />
+      )}
+
+      {/* ── Ideas Page (full-screen) ─────────────────────────────────────────── */}
+      {showIdeasPage && (
+        <IdeasPage
+          currentUser={currentUser}
+          onClose={() => setShowIdeasPage(false)}
         />
       )}
 
