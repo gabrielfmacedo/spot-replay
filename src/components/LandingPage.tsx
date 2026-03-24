@@ -392,7 +392,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             </div>
 
             <div className="flex gap-8 pt-2">
-              <StatBadge value="6+" label="Sites suportados" />
+              <StatBadge value="5+" label="Sites suportados" />
               <div className="w-px bg-white/8" />
               <StatBadge value="100%" label="Gratuito" />
               <div className="w-px bg-white/8" />
@@ -400,7 +400,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2">
-              {['PokerStars', 'GGPoker', '888 Poker', 'WPN / ACR', 'Winamax', 'PartyPoker'].map(site => (
+              {['PokerStars', 'GGPoker', '888 Poker', 'PartyPoker', 'Bodog'].map(site => (
                 <span key={site} className="text-[10px] font-semibold text-slate-500 bg-white/5 border border-white/8 rounded-full px-3 py-1">
                   {site}
                 </span>
@@ -457,7 +457,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
               <FeatureCard icon={<Globe size={22} className="text-orange-400" />}
                 accent="bg-orange-500/15 border border-orange-500/20"
                 title="Multi-site"
-                desc="Suporta PokerStars, GGPoker, 888 Poker, WPN/ACR, PartyPoker e Winamax. Cole o histórico de qualquer formato." />
+                desc="Suporta PokerStars, GGPoker, 888 Poker, PartyPoker e Bodog. Cole o histórico de qualquer formato." />
               <FeatureCard icon={<Layers size={22} className="text-sky-400" />}
                 accent="bg-sky-500/15 border border-sky-500/20"
                 title="Sessões de estudo"

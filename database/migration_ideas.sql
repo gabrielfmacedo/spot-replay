@@ -28,15 +28,15 @@ CREATE INDEX IF NOT EXISTS idea_votes_idea_id_idx ON public.idea_votes(idea_id);
 ALTER TABLE public.ideas      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.idea_votes ENABLE ROW LEVEL SECURITY;
 
--- Ideas: anyone authenticated can read
-CREATE POLICY "ideas_read" ON public.ideas FOR SELECT TO authenticated USING (true);
+-- Ideas: anyone (including anon) can read
+CREATE POLICY "ideas_read_public" ON public.ideas FOR SELECT USING (true);
 -- Ideas: authenticated user can insert their own
 CREATE POLICY "ideas_insert" ON public.ideas FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
--- Ideas: only the author can update (or admins via service_role)
+-- Ideas: only the author can update
 CREATE POLICY "ideas_update_own" ON public.ideas FOR UPDATE TO authenticated USING (auth.uid() = user_id);
 
--- Votes: anyone authenticated can read
-CREATE POLICY "votes_read" ON public.idea_votes FOR SELECT TO authenticated USING (true);
+-- Votes: anyone can read
+CREATE POLICY "votes_read_public" ON public.idea_votes FOR SELECT USING (true);
 -- Votes: user can insert their own
 CREATE POLICY "votes_insert" ON public.idea_votes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 -- Votes: user can update their own vote

@@ -37,7 +37,10 @@ export async function fetchIdeas(userId: string | null): Promise<Idea[]> {
     supabase.from('idea_votes').select('idea_id, user_id, points'),
   ]);
 
-  if (ideasRes.error) throw ideasRes.error;
+  if (ideasRes.error) {
+    if (ideasRes.error.code === '42P01') throw new Error('Tabela de ideias não encontrada. Execute a migration no Supabase SQL Editor.');
+    throw ideasRes.error;
+  }
 
   const ideas: RawIdea[] = ideasRes.data ?? [];
   const votes: RawVote[] = votesRes.data ?? [];
@@ -58,14 +61,17 @@ export async function fetchIdeas(userId: string | null): Promise<Idea[]> {
 }
 
 export async function submitIdea(userId: string, authorName: string, title: string, description: string): Promise<void> {
-  if (!supabase) throw new Error('Supabase not configured');
+  if (!supabase) throw new Error('Supabase not configurado');
   const { error } = await supabase.from('ideas').insert({
     user_id: userId,
     author_name: authorName,
     title: title.trim(),
     description: description.trim() || null,
   });
-  if (error) throw error;
+  if (error) {
+    if (error.code === '42P01') throw new Error('Tabela de ideias não encontrada. Execute a migration no Supabase SQL Editor.');
+    throw error;
+  }
 }
 
 export async function upsertVote(ideaId: string, userId: string, points: number): Promise<void> {
