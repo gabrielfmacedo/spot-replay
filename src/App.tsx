@@ -162,7 +162,7 @@ const App: React.FC = () => {
   const [actingGlow,     setActingGlow]     = useState(true);
   const [showSPR,        setShowSPR]        = useState(false);
   const [showSettings,   setShowSettings]   = useState(false);
-  const [positionFilter, setPositionFilter] = useState('');
+  const [positionFilter, setPositionFilter] = useState<string[]>([]);
   // Auth state
   const [authChecked,      setAuthChecked]      = useState(false);
   const [currentUser,      setCurrentUser]      = useState<{ id: string; email: string; name: string } | null>(null);
@@ -459,7 +459,7 @@ const App: React.FC = () => {
         if (sidebarFilter === 'pfr'  && !heroPFRed(hand))   return false;
         if (sidebarFilter === '3bet' && !hero3Betted(hand)) return false;
         if (sidebarFilter === 'call' && !heroCalledPF(hand)) return false;
-        if (positionFilter && hand.summary.heroPos !== positionFilter) return false;
+        if (positionFilter.length > 0 && !positionFilter.includes(hand.summary.heroPos ?? '')) return false;
         if (tagFilter && !note?.tags?.includes(tagFilter)) return false;
 
         if (stackBBFilter) {
@@ -1168,9 +1168,9 @@ const App: React.FC = () => {
               {sidebarSearch && <button onClick={() => setSidebarSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X size={9} /></button>}
             </div>
             <button onClick={() => setShowFilterModal(true)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}>
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all ${(sidebarFilter !== 'all' || positionFilter.length > 0 || tagFilter || stackBBFilter || bbValueFilter) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}>
               <SlidersHorizontal size={11} />
-              {(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) ? '●' : 'FLT'}
+              {(sidebarFilter !== 'all' || positionFilter.length > 0 || tagFilter || stackBBFilter || bbValueFilter) ? '●' : 'FLT'}
             </button>
             <button
               onClick={() => setHandsReversed(v => !v)}
@@ -1183,8 +1183,8 @@ const App: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{filteredHandsWithIndex.length} de {hands.length} mãos</span>
             <div className="flex items-center gap-2">
-              {(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) && (
-                <button onClick={() => { setSidebarFilter('all'); setPositionFilter(''); setTagFilter(''); setStackBBFilter(null); setBBValueFilter(null); }} className="text-[9px] text-red-400 hover:text-red-300 font-black uppercase transition-colors">
+              {(sidebarFilter !== 'all' || positionFilter.length > 0 || tagFilter || stackBBFilter || bbValueFilter) && (
+                <button onClick={() => { setSidebarFilter('all'); setPositionFilter([]); setTagFilter(''); setStackBBFilter(null); setBBValueFilter(null); }} className="text-[9px] text-red-400 hover:text-red-300 font-black uppercase transition-colors">
                   ✕ limpar
                 </button>
               )}

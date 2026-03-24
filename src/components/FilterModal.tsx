@@ -14,14 +14,14 @@ export interface NumericFilter {
 
 interface FilterModalProps {
   sidebarFilter: SidebarFilter;
-  positionFilter: string;
+  positionFilter: string[];
   tagFilter: string;
   stackBBFilter: NumericFilter | null;
   bbValueFilter: NumericFilter | null;
   customTags: string[];
   onApply: (
     filter: SidebarFilter,
-    position: string,
+    position: string[],
     tagFilter: string,
     stackBBFilter: NumericFilter | null,
     bbValueFilter: NumericFilter | null,
@@ -59,7 +59,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
   sidebarFilter, positionFilter, tagFilter, stackBBFilter, bbValueFilter, customTags, onApply, onClose,
 }) => {
   const [filter,   setFilter]   = useState<SidebarFilter>(sidebarFilter);
-  const [position, setPosition] = useState(positionFilter);
+  const [position, setPosition] = useState<string[]>(positionFilter);
   const [tag,      setTag]      = useState(tagFilter);
   const [stack,    setStack]    = useState<NumericState>(initNum(stackBBFilter));
   const [bb,       setBB]       = useState<NumericState>(initNum(bbValueFilter));
@@ -69,14 +69,14 @@ const FilterModal: React.FC<FilterModalProps> = ({
     onClose();
   };
   const clear = () => {
-    setFilter('all'); setPosition(''); setTag('');
+    setFilter('all'); setPosition([]); setTag('');
     setStack({ op: 'lt', val: '', val2: '' });
     setBB({ op: 'lt', val: '', val2: '' });
   };
 
   const activeCount =
-    (filter !== 'all' ? 1 : 0) +
-    (position         ? 1 : 0) +
+    (filter !== 'all'     ? 1 : 0) +
+    (position.length > 0  ? 1 : 0) +
     (tag              ? 1 : 0) +
     (isActive(stack)  ? 1 : 0) +
     (isActive(bb)     ? 1 : 0);
@@ -102,18 +102,21 @@ const FilterModal: React.FC<FilterModalProps> = ({
     );
   };
 
-  const PosChip = ({ pos }: { pos: string }) => (
-    <button
-      onClick={() => setPosition(position === pos ? '' : pos)}
-      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all ${
-        position === pos
-          ? 'bg-purple-600 text-white border-purple-600'
-          : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:text-white'
-      }`}
-    >
-      {pos}
-    </button>
-  );
+  const PosChip = ({ pos }: { pos: string }) => {
+    const active = position.includes(pos);
+    return (
+      <button
+        onClick={() => setPosition(active ? position.filter(p => p !== pos) : [...position, pos])}
+        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all ${
+          active
+            ? 'bg-purple-600 text-white border-purple-600'
+            : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:text-white'
+        }`}
+      >
+        {pos}
+      </button>
+    );
+  };
 
   // ── Numeric filter block ─────────────────────────────────────────────────
   const NumericBlock = ({
