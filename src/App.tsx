@@ -590,19 +590,18 @@ const App: React.FC = () => {
   const prevStep = useCallback(() => setCurrentStep(p => Math.max(0, p - 1)), []);
 
   const nextHand = useCallback(() => {
-    setCurrentHandIndex(p => {
-      if (p < hands.length - 1) return p + 1;
-      return p;
-    });
-    setCurrentStep(0);
-    setIsPlaying(false);
-  }, [hands.length]);
+    const filtered = filteredHandsWithIndex;
+    const pos = filtered.findIndex(f => f.idx === currentHandIndex);
+    const next = pos >= 0 && pos < filtered.length - 1 ? filtered[pos + 1].idx : null;
+    if (next !== null) { setCurrentHandIndex(next); setCurrentStep(0); setIsPlaying(false); }
+  }, [filteredHandsWithIndex, currentHandIndex]);
 
   const prevHand = useCallback(() => {
-    setCurrentHandIndex(p => Math.max(0, p - 1));
-    setCurrentStep(0);
-    setIsPlaying(false);
-  }, []);
+    const filtered = filteredHandsWithIndex;
+    const pos = filtered.findIndex(f => f.idx === currentHandIndex);
+    const prev = pos > 0 ? filtered[pos - 1].idx : null;
+    if (prev !== null) { setCurrentHandIndex(prev); setCurrentStep(0); setIsPlaying(false); }
+  }, [filteredHandsWithIndex, currentHandIndex]);
 
   const jumpToStreet = useCallback((target: string) => {
     if (!currentHand) return;
@@ -1718,7 +1717,7 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-2 pl-2 shrink-0">
                   <div className="flex flex-col items-center min-w-[36px]">
                     <span className="text-[8px] font-black text-slate-500 uppercase">MÃO</span>
-                    <span className="text-[11px] font-black text-white">{currentHandIndex + 1}/{hands.length}</span>
+                    <span className="text-[11px] font-black text-white">{(() => { const pos = filteredHandsWithIndex.findIndex(f => f.idx === currentHandIndex); return `${pos >= 0 ? pos + 1 : '-'}/${filteredHandsWithIndex.length}`; })()}</span>
                   </div>
                   <div className="flex flex-col gap-1 w-16">
                     <span className="text-[8px] font-black text-blue-500 uppercase italic leading-none">{gameState.street}</span>
@@ -1769,13 +1768,13 @@ const App: React.FC = () => {
 
                 {/* Center: navigation */}
                 <div className="flex items-center gap-1.5">
-                  <button onClick={prevHand}  disabled={currentHandIndex === 0}              className="p-2 hover:bg-white/10 rounded-lg transition-all disabled:opacity-10 text-slate-400 active:scale-90"><ChevronLeft  size={18} /></button>
+                  <button onClick={prevHand}  disabled={filteredHandsWithIndex.findIndex(f => f.idx === currentHandIndex) <= 0} className="p-2 hover:bg-white/10 rounded-lg transition-all disabled:opacity-10 text-slate-400 active:scale-90"><ChevronLeft  size={18} /></button>
                   <button onClick={prevStep}                                                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-all text-slate-300 active:scale-90"><SkipBack      size={18} /></button>
                   <button onClick={() => setIsPlaying(p => !p)}                              className="w-11 h-11 bg-blue-600 hover:bg-blue-500 text-white rounded-[0.8rem] flex items-center justify-center shadow-lg transition-all active:scale-95">
                     {isPlaying ? <Pause size={20} fill="white" /> : <Play size={20} fill="white" className="ml-0.5" />}
                   </button>
                   <button onClick={nextStep}                                                  className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition-all text-slate-300 active:scale-90"><SkipForward   size={18} /></button>
-                  <button onClick={nextHand}  disabled={currentHandIndex === hands.length - 1} className="p-2 hover:bg-white/10 rounded-lg transition-all disabled:opacity-10 text-slate-400 active:scale-90"><ChevronRight size={18} /></button>
+                  <button onClick={nextHand}  disabled={(() => { const pos = filteredHandsWithIndex.findIndex(f => f.idx === currentHandIndex); return pos < 0 || pos >= filteredHandsWithIndex.length - 1; })()} className="p-2 hover:bg-white/10 rounded-lg transition-all disabled:opacity-10 text-slate-400 active:scale-90"><ChevronRight size={18} /></button>
 
                   {/* Speed */}
                   <button onClick={cycleSpeed} title="Velocidade" className="ml-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-black text-blue-400 transition-all active:scale-95 min-w-[34px] text-center">
