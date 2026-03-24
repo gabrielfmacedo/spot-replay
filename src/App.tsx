@@ -154,6 +154,8 @@ const App: React.FC = () => {
   const [playerNoteTarget, setPlayerNoteTarget]  = useState<string | null>(null);
   const [tableZoom,      setTableZoom]      = useState(1.0);
   const [isFullscreen,   setIsFullscreen]   = useState(false);
+  const [showAppShare,   setShowAppShare]   = useState(false);
+  const appShareRef = useRef<HTMLDivElement>(null);
   const [hidePlayerNames,setHidePlayerNames]= useState(false);
   const [actingGlow,     setActingGlow]     = useState(true);
   const [showSPR,        setShowSPR]        = useState(false);
@@ -280,6 +282,16 @@ const App: React.FC = () => {
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  // ── App share dropdown — close on outside click ───────────────────────────
+  useEffect(() => {
+    if (!showAppShare) return;
+    const handler = (e: MouseEvent) => {
+      if (appShareRef.current && !appShareRef.current.contains(e.target as Node)) setShowAppShare(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showAppShare]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -733,7 +745,7 @@ const App: React.FC = () => {
   // ── Import ────────────────────────────────────────────────────────────────
   const processImportIncremental = async (text: string) => {
     setIsParsing(true); setParsingProgress(0); setHands([]);
-    const blocks = text.split(/(?=PokerStars Hand #|\*{5} Hand(?:History| #| ID)|888poker Hand History|Winamax Poker|(?:^|\n)Poker Hand #|(?:^|\n)Game #\d)/i).filter(b => b.trim().length > 50);
+    const blocks = text.split(/(?=PokerStars Hand #|\*{5} Hand(?:History| #| ID)|888poker|Winamax Poker|(?:^|\n)Poker Hand #|(?:^|\n)Game #\d)/i).filter(b => b.trim().length > 50);
     const total = blocks.length;
     if (total === 0) { alert('Nenhum histórico válido encontrado.'); setIsParsing(false); return; }
     let processed = 0; const all: HandHistory[] = [];
@@ -1120,11 +1132,26 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{filteredHandsWithIndex.length} de {hands.length} mãos</span>
-            {(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) && (
-              <button onClick={() => { setSidebarFilter('all'); setPositionFilter(''); setTagFilter(''); setStackBBFilter(null); setBBValueFilter(null); }} className="text-[9px] text-red-400 hover:text-red-300 font-black uppercase transition-colors">
-                ✕ limpar
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {(sidebarFilter !== 'all' || positionFilter || tagFilter || stackBBFilter || bbValueFilter) && (
+                <button onClick={() => { setSidebarFilter('all'); setPositionFilter(''); setTagFilter(''); setStackBBFilter(null); setBBValueFilter(null); }} className="text-[9px] text-red-400 hover:text-red-300 font-black uppercase transition-colors">
+                  ✕ limpar
+                </button>
+              )}
+              {hands.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Remover todas as ${hands.length} mãos importadas?`)) {
+                      setHands([]); setHandNotes({}); setCurrentHandIndex(0); setCurrentStep(0); setIsPlaying(false);
+                    }
+                  }}
+                  title="Limpar todas as mãos"
+                  className="text-[9px] text-slate-600 hover:text-red-400 font-black uppercase transition-colors flex items-center gap-0.5"
+                >
+                  <X size={9} /> tudo
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1224,6 +1251,50 @@ const App: React.FC = () => {
                 <button onClick={() => setTableZoom(z => Math.min(1.5, +(z + 0.1).toFixed(1)))} className="text-slate-400 hover:text-white transition-colors p-0.5"><ZoomIn size={12} /></button>
               </div>
             )}
+            {/* Share app button */}
+            <div className="relative" ref={appShareRef}>
+              <button
+                onClick={() => setShowAppShare(v => !v)}
+                title="Compartilhar"
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${showAppShare ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/10'}`}
+              >
+                <Share2 size={12} /> Compartilhar
+              </button>
+              {showAppShare && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-[#0a0f1a] border border-white/10 rounded-2xl shadow-2xl z-[300] overflow-hidden">
+                  <p className="text-[8px] font-black uppercase text-slate-600 tracking-widest px-4 pt-3 pb-2">Compartilhar Spot Replay</p>
+                  {(() => {
+                    const url = window.location.origin;
+                    const text = encodeURIComponent('Confira o Spot Replay — replayer de poker profissional em português, 100% gratuito!');
+                    const urlEnc = encodeURIComponent(url);
+                    return (
+                      <div className="pb-2">
+                        <a href={`https://wa.me/?text=${text}%20${urlEnc}`} target="_blank" rel="noopener noreferrer" onClick={() => setShowAppShare(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-[#25D366]">
+                          <span className="text-base leading-none">💬</span> WhatsApp
+                        </a>
+                        <a href={`https://t.me/share/url?url=${urlEnc}&text=${text}`} target="_blank" rel="noopener noreferrer" onClick={() => setShowAppShare(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-[#2CA5E0]">
+                          <span className="text-base leading-none">✈️</span> Telegram
+                        </a>
+                        <a href={`https://twitter.com/intent/tweet?url=${urlEnc}&text=${text}`} target="_blank" rel="noopener noreferrer" onClick={() => setShowAppShare(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-slate-300">
+                          <span className="text-base leading-none">𝕏</span> Twitter / X
+                        </a>
+                        <div className="border-t border-white/5 mt-1 pt-1">
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(url); setShowAppShare(false); }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-slate-400 hover:text-white"
+                          >
+                            <Copy size={12} /> Copiar link
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
             <button onClick={toggleFullscreen} title="Tela cheia" className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 transition-colors">
               {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
@@ -1382,12 +1453,15 @@ const App: React.FC = () => {
                             return (
                               <div
                                 key={`${c}-${i}`}
-                                className="transition-all duration-300"
-                                style={isWinning ? {
-                                  transform: 'scale(1.12)',
-                                  filter: 'drop-shadow(0 0 8px rgba(250,204,21,0.7)) drop-shadow(0 0 18px rgba(250,204,21,0.35))',
-                                  zIndex: 10,
-                                } : { filter: winningBoardCards.size > 0 ? 'brightness(0.6)' : undefined }}
+                                className="transition-all duration-500"
+                                style={{
+                                  position: 'relative',
+                                  zIndex: isWinning ? 10 : 1,
+                                  transform: isWinning ? 'scale(1.14) translateY(-3px)' : 'scale(1) translateY(0)',
+                                  filter: isWinning
+                                    ? 'drop-shadow(0 0 10px rgba(250,204,21,0.9)) drop-shadow(0 0 24px rgba(250,204,21,0.5))'
+                                    : winningBoardCards.size > 0 ? 'brightness(0.55)' : undefined,
+                                }}
                               >
                                 <Card code={c} size="lg" animate cardStyle={cardStyle} />
                               </div>

@@ -377,15 +377,17 @@ function parse888Hand(block: string): HandHistory | null {
   const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 5) return null;
 
-  const handId = block.match(/Game (\d+)/i)?.[1] || '0';
-  const stakesM = block.match(/([\d]+)\/([\d]+) Blinds/i) || block.match(/\$?([\d.]+)\/\$?([\d.]+)/);
+  const handId = block.match(/Hand #?(\d+)/i)?.[1] || block.match(/Game #?(\d+)/i)?.[1] || '0';
+  const stakesM = block.match(/\$?([\d.]+)\/\$?([\d.]+)/);
   const stakes  = stakesM ? `${stakesM[1]}/${stakesM[2]}` : 'N/A';
   const tournamentMatch = block.match(/Tournament #(\d+)/i);
 
   // 888poker uses "." as thousands separator: "3.598" = 3598 chips
+  // Also strips leading $ for cash-game amounts like "$2.00"
   const p888 = (s: string): number => {
-    const m = s.replace(/\s/g, '').match(/^(\d+)\.(\d{3})$/);
-    return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : parseFloat(s);
+    const clean = s.replace(/[$\s,]/g, '');
+    const m = clean.match(/^(\d+)\.(\d{3})$/);
+    return m ? parseInt(m[1]) * 1000 + parseInt(m[2]) : parseFloat(clean) || 0;
   };
 
   const players:  Player[]       = [];
@@ -422,8 +424,8 @@ function parse888Hand(block: string): HandHistory | null {
     if (btnM) { buttonSeat = parseInt(btnM[1]); continue; }
 
     // ── Seats ────────────────────────────────────────────────────────────────
-    // "Seat 1: Lov3d2Two ( 3.598 )"
-    const seatM = line.match(/^Seat (\d+): (.+?) \(\s*([\d.]+)\s*\)\s*$/);
+    // "Seat 1: Lov3d2Two ( 3.598 )" or "Seat 1: Player ( $2.00 )"
+    const seatM = line.match(/^Seat (\d+): (.+?) \(\s*\$?([\d.,]+)\s*\)\s*$/);
     if (seatM) {
       const stack = p888(seatM[3]);
       players.push({ seat: parseInt(seatM[1]), name: seatM[2].trim(), stack, initialStack: stack, isHero: false, position: '', isActive: true, cards: [] });
@@ -457,7 +459,7 @@ function parse888Hand(block: string): HandHistory | null {
     if (/SHOW ?DOWN/i.test(line)) { currentStreet = 'SHOWDOWN'; continue; }
 
     // ── Antes ────────────────────────────────────────────────────────────────
-    const anteM = line.match(/^(.+?) posts ante \[?([\d.]+)\]?/i);
+    const anteM = line.match(/^(.+?) posts ante \[?\$?([\d.,]+)\]?/i);
     if (anteM) {
       const p = players.find(p => p.name === anteM[1].trim());
       const amt = p888(anteM[2]);
@@ -466,7 +468,7 @@ function parse888Hand(block: string): HandHistory | null {
     }
 
     // ── Blinds ───────────────────────────────────────────────────────────────
-    const blindM = line.match(/^(.+?)(?::)? posts (small blind|big blind) \[?([\d.]+)\]?/i);
+    const blindM = line.match(/^(.+?)(?::)? posts (small blind|big blind) \[?\$?([\d.,]+)\]?/i);
     if (blindM) {
       const type: ActionType = blindM[2].toLowerCase().includes('small') ? 'POST_SB' : 'POST_BB';
       if (type === 'POST_SB') sbPlayer = blindM[1].trim();
@@ -475,12 +477,12 @@ function parse888Hand(block: string): HandHistory | null {
     }
 
     // ── Uncalled ─────────────────────────────────────────────────────────────
-    const uncalledM = line.match(/^Uncalled bet \[?([\d.]+)\]? returned to (.+)/i);
+    const uncalledM = line.match(/^Uncalled bet \[?\$?([\d.,]+)\]? returned to (.+)/i);
     if (uncalledM) { actions.push({ playerName: uncalledM[2].trim(), type: 'UNCALLED_RETURN', amount: p888(uncalledM[1]), street: currentStreet }); continue; }
 
     // ── Actions (no colon: "Anton4397 raises [300]" / "cobratomas folds") ────
     if (line.startsWith('**') || line.startsWith('#')) continue;
-    const actM = line.match(/^(.+?) (folds?|checks?|calls?|bets?|raises?)(?: \[?([\d.]+)\]?)?(?: to \[?([\d.]+)\]?)?/i);
+    const actM = line.match(/^(.+?) (folds?|checks?|calls?|bets?|raises?)(?: \[?\$?([\d.,]+)\]?)?(?: to \[?\$?([\d.,]+)\]?)?/i);
     if (actM && players.find(p => p.name === actM[1].trim())) {
       const name   = actM[1].trim();
       const raw    = actM[2].toLowerCase();
@@ -809,7 +811,8 @@ function detectFormat(text: string): RoomFormat {
   // GGPoker: "Poker Hand #TM..." or "Poker Hand #HD..." (no "PokerStars" prefix)
   if (/^Poker Hand #[A-Z]/m.test(text) || /GGPoker.*Hand #|PokerStars.*GGPoker/i.test(text)) return 'ggpoker';
   if (/Hand History for Game/i.test(text) || /\*{5} Hand #/i.test(text)) return 'partypoker';
-  if (/888poker Hand History/i.test(text)) return '888';
+  // 888: detect both "888poker Hand History" and cash-game "888poker Hand #"
+  if (/888poker/i.test(text)) return '888';
   if (/Winamax Poker/i.test(text)) return 'winamax';
   if (/Game #\d+.*Hold'em|ACR|Americas Cardroom|Winning Poker/i.test(text)) return 'wpn';
   // fallback: try pokerstars-like (many rooms export PS-compatible format)
@@ -821,7 +824,7 @@ function splitBlocks(text: string, format: RoomFormat): string[] {
     pokerstars: /(?=PokerStars Hand #)/i,
     ggpoker:    /(?=Poker Hand #)/i,
     partypoker: /(?=\*{5} Hand(?:History| #| ID))/i,
-    '888':      /(?=888poker Hand History for Game)/i,
+    '888':      /(?=888poker)/i,
     wpn:        /(?=Game #\d)/i,
     winamax:    /(?=Winamax Poker)/i,
     ignition:   /(?=Ignitionpoker\.com Hand #|Ignition Hand #|Bodog Hand #)/i,
