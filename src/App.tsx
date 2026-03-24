@@ -988,6 +988,25 @@ const App: React.FC = () => {
     return new Set(best5.filter(c => boardSet.has(c)));
   }, [currentHand, gameState]);
 
+  // ── Mobile/tablet gate ────────────────────────────────────────────────────
+  const isMobile = window.innerWidth < 1024;
+  if (isMobile) {
+    return (
+      <div className="flex h-screen w-screen bg-[#02040a] flex-col items-center justify-center px-8 text-center gap-6">
+        <div className="text-5xl">💻</div>
+        <h1 className="text-xl font-black text-white uppercase tracking-tight">
+          SPOT <span className="text-blue-500">REPLAY</span>
+        </h1>
+        <p className="text-[15px] text-slate-300 leading-relaxed max-w-xs">
+          Para uma melhor experiência usando o Spot Replay, acesse o site através do navegador do seu computador ou notebook.
+        </p>
+        <div className="mt-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
+          <p className="text-[11px] text-slate-500">Disponível apenas para desktop</p>
+        </div>
+      </div>
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // ── Auth gate ──────────────────────────────────────────────────────────────
   if (!authChecked) {
