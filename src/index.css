@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+    --table-blue: radial-gradient(circle at 50% 40%, #2546a1 0%, #1e293b 75%, #0f172a 100%);
+    --accent-emerald: #10b981;
+    --accent-blue: #3b82f6;
+    /* Theme overrides — set by JS */
+    --table-felt: radial-gradient(ellipse at 50% 60%, #0f2040 0%, #060e1e 100%);
+    --table-rail: #0a1628;
+    --table-rail-border: #1e3a5f;
+    --app-bg: #02040a;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: #02040a;
+    color: #f8fafc;
+    overflow: hidden;
+}
+
+.perspective-container {
+    perspective: 2500px;
+}
+
+.poker-table-surface {
+    background: var(--table-felt);
+    border-radius: 140px;
+    position: relative;
+    box-shadow:
+        inset 0 0 100px rgba(0,0,0,0.9),
+        0 0 40px rgba(0,0,0,0.6);
+    border: 3px solid var(--table-rail-border);
+    transition: background 0.5s ease, border-color 0.5s ease;
+}
+
+.poker-table-rail {
+    position: absolute;
+    inset: -22px;
+    border-radius: 160px;
+    background: var(--table-rail);
+    border: 2px solid var(--table-rail-border);
+    box-shadow: 0 40px 100px rgba(0,0,0,1);
+    z-index: -1;
+    transition: background 0.5s ease, border-color 0.5s ease;
+}
+
+.poker-table-surface::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('https://www.transparenttextures.com/patterns/felt.png');
+    opacity: 0.12;
+    pointer-events: none;
+    border-radius: inherit;
+}
+
+.font-mono-poker { font-family: var(--font-mono); }
+
+.backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Acting glow via ::after — keeps animation off the text-containing element to prevent text jitter */
+@keyframes acting-glow {
+    0%, 100% { opacity: 0.45; box-shadow: 0 0 8px 4px rgba(255,255,255,0.3); }
+    50%       { opacity: 1;    box-shadow: 0 0 20px 10px rgba(255,255,255,0.65); }
+}
+.animate-acting-glow {
+    position: relative; /* ensure ::after is positioned relative to this */
+}
+.animate-acting-glow::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    pointer-events: none;
+    will-change: opacity, box-shadow;
+    transform: translateZ(0);
+    animation: acting-glow 0.9s ease-in-out infinite;
+    z-index: -1;
+}
+
+@keyframes acting-glow-blue {
+    0%, 100% { opacity: 0.45; box-shadow: 0 0 10px 5px rgba(59,130,246,0.35); }
+    50%       { opacity: 1;    box-shadow: 0 0 26px 12px rgba(59,130,246,0.7); }
+}
+.animate-acting-glow-blue {
+    position: relative;
+}
+.animate-acting-glow-blue::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 1.5px solid rgba(59,130,246,0.55);
+    pointer-events: none;
+    will-change: opacity, box-shadow;
+    transform: translateZ(0);
+    animation: acting-glow-blue 0.9s ease-in-out infinite;
+    z-index: -1;
+}
+
+@keyframes winner-glow {
+    0%, 100% { box-shadow: 0 0 10px 3px rgba(52,211,153,0.4),  0 0 0 1.5px rgba(52,211,153,0.45); }
+    50%       { box-shadow: 0 0 28px 10px rgba(52,211,153,0.75), 0 0 0 2px   rgba(52,211,153,0.7); }
+}
+.animate-winner-glow { animation: winner-glow 1.3s ease-in-out infinite; }
+
+@keyframes loser-pulse {
+    0%, 100% { box-shadow: 0 0 6px 2px rgba(239,68,68,0.25); }
+    50%       { box-shadow: 0 0 18px 7px rgba(239,68,68,0.55); }
+}
+.animate-loser-pulse { animation: loser-pulse 1.5s ease-in-out infinite; }
+
+.animate-pulse-soft {
+    animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Clean table layout ──────────────────────────────────────────────────── */
+
+/*
+  Strategy: the "rail" is rendered as a THICK inset border effect using
+  outline + box-shadow (inset), so it never escapes the parent overflow:hidden.
+  The felt is a clearly visible green; the rail is a warm brown band.
+*/
+
+.poker-table-clean {
+    /* Bright felt — clearly visible against black */
+    background: radial-gradient(ellipse at 50% 42%, #1e6b3f 0%, #165430 55%, #0f3a22 100%);
+    border-radius: 50% / 44%;
+    position: relative;
+    overflow: hidden; /* clip the rail pseudo-element to the oval */
+
+    /* Felt inner border + rail band via inset box-shadow */
+    box-shadow:
+        /* Rail band — warm brown, 18px thick */
+        inset 0 0 0 18px #3b2410,
+        /* Rail top highlight */
+        inset 0 0 0 19px rgba(255, 200, 80, 0.22),
+        /* Rail inner edge */
+        inset 0 0 0 22px rgba(0,0,0,0.50),
+        /* Felt inner vignette */
+        inset 0 0 80px rgba(0,0,0,0.45);
+
+    /* Outer border visible around the oval */
+    border: 3px solid rgba(255, 190, 60, 0.28);
+
+    transition: background 0.5s ease;
+}
+
+/* Felt sheen — subtle top highlight */
+.poker-table-clean::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(ellipse at 50% 5%, rgba(255,255,255,0.07) 0%, transparent 55%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.poker-table-rail-clean {
+    display: none; /* rail is now done via box-shadow on the table itself */
+}
