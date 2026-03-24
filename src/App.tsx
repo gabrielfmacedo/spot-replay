@@ -936,31 +936,36 @@ const App: React.FC = () => {
   }, [currentTheme]);
 
   // ── Winning board card highlight ──────────────────────────────────────────
-  // Returns a Set of board card codes that are part of the best 5-card hand.
-  // If a villain has revealed cards, uses the winner's hand; otherwise hero's.
+  // Only shown at showdown (≥1 villain revealed cards + full board).
+  // Highlights the board cards that are part of the winning 5-card hand.
   const winningBoardCards = useMemo((): Set<string> => {
-    if (!currentHand || gameState.visibleBoard.length < 3) return new Set();
+    if (!currentHand || gameState.visibleBoard.length < 5) return new Set();
+
+    // Need at least one opponent with revealed cards (real showdown)
+    const revealedOpponents = currentHand.players
+      .filter(p => !p.isHero)
+      .map(p => gameState.playerStates[p.name]?.revealedCards)
+      .filter((c): c is string[] => !!(c?.length === 2));
+
+    if (revealedOpponents.length === 0) return new Set();
+
+    // Find the player (hero or revealed villain) with the best hand
     const hero = currentHand.players.find(p => p.isHero);
-    if (!hero?.cards?.length) return new Set();
+    let sourceCards: string[] | null = hero?.cards?.length ? hero.cards : null;
+    let bestScore = sourceCards
+      ? (evaluateCards(sourceCards, gameState.visibleBoard)?.score ?? -1)
+      : -1;
 
-    // Collect all players with visible cards
-    let sourceCards = hero.cards;
-    let bestScore = evaluateCards(hero.cards, gameState.visibleBoard)?.score ?? -1;
-
-    for (const p of currentHand.players) {
-      if (!p.isHero) {
-        const ps = gameState.playerStates[p.name];
-        if (ps?.revealedCards?.length === 2) {
-          const sc = evaluateCards(ps.revealedCards, gameState.visibleBoard)?.score ?? -1;
-          if (sc > bestScore) { bestScore = sc; sourceCards = ps.revealedCards; }
-        }
-      }
+    for (const cards of revealedOpponents) {
+      const sc = evaluateCards(cards, gameState.visibleBoard)?.score ?? -1;
+      if (sc > bestScore) { bestScore = sc; sourceCards = cards; }
     }
+
+    if (!sourceCards) return new Set();
 
     const best5 = getBestFiveCards(sourceCards, gameState.visibleBoard);
     if (!best5) return new Set();
 
-    // Return only the board cards among the best 5
     const boardSet = new Set(gameState.visibleBoard);
     return new Set(best5.filter(c => boardSet.has(c)));
   }, [currentHand, gameState]);

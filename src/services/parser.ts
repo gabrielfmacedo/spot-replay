@@ -810,9 +810,9 @@ function detectFormat(text: string): RoomFormat {
   if (text.includes('PokerStars Hand #')) return 'pokerstars';
   // GGPoker: "Poker Hand #TM..." or "Poker Hand #HD..." (no "PokerStars" prefix)
   if (/^Poker Hand #[A-Z]/m.test(text) || /GGPoker.*Hand #|PokerStars.*GGPoker/i.test(text)) return 'ggpoker';
-  if (/Hand History for Game/i.test(text) || /\*{5} Hand #/i.test(text)) return 'partypoker';
-  // 888: detect both "888poker Hand History" and cash-game "888poker Hand #"
+  // 888 must come BEFORE partypoker — 888 headers also contain "Hand History for Game"
   if (/888poker/i.test(text)) return '888';
+  if (/Hand History for Game/i.test(text) || /\*{5} Hand #/i.test(text)) return 'partypoker';
   if (/Winamax Poker/i.test(text)) return 'winamax';
   if (/Game #\d+.*Hold'em|ACR|Americas Cardroom|Winning Poker/i.test(text)) return 'wpn';
   // fallback: try pokerstars-like (many rooms export PS-compatible format)
