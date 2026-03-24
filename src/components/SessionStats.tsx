@@ -18,6 +18,7 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
 
     let wins = 0, losses = 0, folds = 0;
     let vpip = 0, pfr = 0;
+    let totalNetBB = 0;
     const byPos: Record<string, { hands: number; wins: number; losses: number }> = {};
     const byRoom: Record<string, number> = {};
 
@@ -36,6 +37,22 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
       if (didVPIP) vpip++;
       if (didPFR)  pfr++;
 
+      // bb/100: net chips / BB size
+      const heroActions = hand.actions.filter(a => a.playerName === hero.name);
+      const invested = heroActions
+        .filter(a => ['CALL', 'RAISE', 'BET', 'POST_SB', 'POST_BB'].includes(a.type))
+        .reduce((s, a) => s + (a.amount ?? 0), 0);
+      const uncalled = heroActions
+        .filter(a => a.type === 'UNCALLED_RETURN')
+        .reduce((s, a) => s + (a.amount ?? 0), 0);
+      const collected = heroActions
+        .filter(a => a.type === 'COLLECTED')
+        .reduce((s, a) => s + (a.amount ?? 0), 0);
+      const netChips = collected - invested + uncalled;
+      const bbAction = hand.actions.find(a => a.type === 'POST_BB' && (a.amount ?? 0) > 0);
+      const bbSize = bbAction?.amount ?? 1;
+      totalNetBB += netChips / bbSize;
+
       // By position
       const pos = hero.position || 'UNK';
       if (!byPos[pos]) byPos[pos] = { hands: 0, wins: 0, losses: 0 };
@@ -46,6 +63,8 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
       // By room
       byRoom[hand.room] = (byRoom[hand.room] || 0) + 1;
     });
+
+    const bb100 = total > 0 ? (totalNetBB / total) * 100 : 0;
 
     const posRows = POS_ORDER
       .filter(pos => byPos[pos])
@@ -64,6 +83,7 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
       foldPct: Math.round((folds  / total) * 100),
       vpipPct: Math.round((vpip / total) * 100),
       pfrPct:  Math.round((pfr  / total) * 100),
+      bb100,
       posRows,
       byRoom,
     };
@@ -71,10 +91,10 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
 
   if (!stats) return null;
 
-  const StatCard = ({ label, value, sub }: { label: string; value: string | number; sub?: string }) => (
+  const StatCard = ({ label, value, sub, color = 'text-white' }: { label: string; value: string | number; sub?: string; color?: string }) => (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-1">
       <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
-      <span className="text-2xl font-black text-white leading-none">{value}</span>
+      <span className={`text-2xl font-black leading-none ${color}`}>{value}</span>
       {sub && <span className="text-[9px] text-slate-500">{sub}</span>}
     </div>
   );
@@ -104,11 +124,15 @@ const SessionStats: React.FC<SessionStatsProps> = ({ hands, onClose }) => {
         </div>
 
         {/* Main stat cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-6">
           <StatCard label="VPIP" value={`${stats.vpipPct}%`} sub="voluntário preflop" />
           <StatCard label="PFR"  value={`${stats.pfrPct}%`}  sub="preflop raise" />
-          <StatCard label="Win Rate"  value={`${stats.winPct}%`}  sub={`${stats.wins} mãos ganhas`} />
-          <StatCard label="Showdown" value={`${stats.lossPct}%`} sub={`${stats.losses} perdidas`} />
+          <StatCard
+            label="bb/100"
+            value={`${stats.bb100 >= 0 ? '+' : ''}${stats.bb100.toFixed(1)}`}
+            sub="blinds por 100 mãos"
+            color={stats.bb100 > 0 ? 'text-emerald-400' : stats.bb100 < 0 ? 'text-red-400' : 'text-white'}
+          />
         </div>
 
         {/* Win / Loss / Fold breakdown */}
