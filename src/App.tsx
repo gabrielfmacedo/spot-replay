@@ -1120,6 +1120,62 @@ const App: React.FC = () => {
         )}
 
 
+        {/* ── Hand info panel ──────────────────────────────────────────────── */}
+        {currentHand && (
+          <div className="mx-2 my-2 shrink-0 bg-white/[0.03] border border-white/8 rounded-xl overflow-hidden">
+            {/* Room + badges */}
+            <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 border-b border-white/5">
+              <span className="text-[9px] font-black text-white uppercase tracking-widest truncate">{currentHand.room}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                {currentHand.isKnockout && (
+                  <span className="text-[7px] font-black bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full uppercase tracking-wider">PKO</span>
+                )}
+                {currentHand.tournamentId && (
+                  <span className="text-[7px] font-black bg-blue-500/15 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full uppercase tracking-wider">MTT</span>
+                )}
+              </div>
+            </div>
+
+            {/* Info rows */}
+            <div className="px-3 py-2 space-y-1">
+              {currentHand.tournamentId && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] text-slate-500 uppercase tracking-wider">Torneio</span>
+                  <span className="text-[8px] font-black text-slate-300">#{currentHand.tournamentId}</span>
+                </div>
+              )}
+              {currentHand.buyIn && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] text-slate-500 uppercase tracking-wider">Buy-in</span>
+                  <span className="text-[8px] font-black text-white">{currentHand.buyIn}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] text-slate-500 uppercase tracking-wider">Blinds</span>
+                <span className="text-[8px] font-black text-slate-300">{currentHand.stakes}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] text-slate-500 uppercase tracking-wider">Jogo</span>
+                <span className="text-[8px] font-black text-slate-300 truncate max-w-[110px] text-right">{currentHand.gameType}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] text-slate-500 uppercase tracking-wider">Jogadores</span>
+                <span className="text-[8px] font-black text-slate-300">{currentHand.players.length}</span>
+              </div>
+              {currentHand.summary.heroPos && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] text-slate-500 uppercase tracking-wider">Posição</span>
+                  <span className="text-[8px] font-black text-blue-400 uppercase">{currentHand.summary.heroPos}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-0.5 border-t border-white/5 mt-0.5">
+                <span className="text-[7px] text-slate-600 uppercase tracking-wider">Mão #</span>
+                <span className="text-[7px] text-slate-600 truncate max-w-[110px] text-right">{currentHand.id}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Search + filter bar */}
         <div className="px-2 pt-2 pb-1.5 shrink-0 space-y-1.5">
           <div className="flex gap-1.5">

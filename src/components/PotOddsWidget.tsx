@@ -107,7 +107,6 @@ const PotOddsWidget: React.FC<Props> = ({ currentPot = 0, bigBlindValue, display
                 <div className={`h-full rounded-full transition-all ${poEval === 'good' ? 'bg-emerald-500' : poEval === 'ok' ? 'bg-amber-500' : 'bg-red-500'}`}
                   style={{ width: `${Math.min(equityNeeded, 100)}%` }} />
               </div>
-              <div className={`text-[8px] font-black uppercase text-center ${poColor}`}>{poLabel}</div>
               {displayMode === 'bb' && <div className="text-[7px] text-slate-600 text-center">{toDisplay(potNum)} pot · {toDisplay(betNum)} bet</div>}
             </div>
           ) : <div className="text-[8px] text-slate-600 text-center py-1">Insira pot e call para calcular</div>
@@ -117,7 +116,6 @@ const PotOddsWidget: React.FC<Props> = ({ currentPot = 0, bigBlindValue, display
         {tab === 'mdf' && (
           hasInputs && mdf !== null ? (
             <div className="space-y-2">
-              <div className="text-[7px] text-slate-600 text-center mb-1">Fórmula: Pot ÷ (Aposta + Pot)</div>
               <div className="flex justify-between items-center">
                 <span className="text-[8px] text-slate-500 font-bold uppercase">Defender ≥</span>
                 <span className={`text-[18px] font-black ${mdfColor}`}>{mdf.toFixed(1)}%</span>
@@ -130,7 +128,6 @@ const PotOddsWidget: React.FC<Props> = ({ currentPot = 0, bigBlindValue, display
                 <div className={`h-full rounded-full transition-all ${mdfEval === 'high' ? 'bg-red-500' : mdfEval === 'mid' ? 'bg-amber-500' : 'bg-emerald-500'}`}
                   style={{ width: `${Math.min(mdf, 100)}%` }} />
               </div>
-              <div className={`text-[8px] font-black uppercase text-center ${mdfColor}`}>{mdfLabel}</div>
             </div>
           ) : <div className="text-[8px] text-slate-600 text-center py-1">Insira pot e aposta para calcular</div>
         )}
@@ -139,7 +136,6 @@ const PotOddsWidget: React.FC<Props> = ({ currentPot = 0, bigBlindValue, display
         {tab === 'blefes' && (
           hasInputs && bluffFreq !== null ? (
             <div className="space-y-2">
-              <div className="text-[7px] text-slate-600 text-center mb-1">Fórmula: Aposta ÷ (Aposta + Pot)</div>
               <div className="flex justify-between items-center">
                 <span className="text-[8px] text-slate-500 font-bold uppercase">Precisar funcionar</span>
                 <span className={`text-[18px] font-black ${bluffColor}`}>{bluffFreq.toFixed(1)}%</span>
@@ -152,7 +148,6 @@ const PotOddsWidget: React.FC<Props> = ({ currentPot = 0, bigBlindValue, display
                 <div className={`h-full rounded-full transition-all ${bluffEval === 'easy' ? 'bg-emerald-500' : bluffEval === 'mid' ? 'bg-amber-500' : 'bg-red-500'}`}
                   style={{ width: `${Math.min(bluffFreq, 100)}%` }} />
               </div>
-              <div className={`text-[8px] font-black uppercase text-center ${bluffColor}`}>{bluffLabel}</div>
             </div>
           ) : <div className="text-[8px] text-slate-600 text-center py-1">Insira pot e aposta para calcular</div>
         )}
