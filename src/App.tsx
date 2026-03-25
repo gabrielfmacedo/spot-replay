@@ -878,8 +878,11 @@ const App: React.FC = () => {
         let total = pa.amount || 0;
         if (pa.type === 'CALL') total = maxBet;
         if (pa.type === 'RAISE' || pa.type === 'BET') { if (total > maxBet) maxBet = total; }
-        const diff = total - ps.currentBet;
-        ps.stack = Math.max(0, ps.stack - diff); state.currentPot += diff; ps.currentBet = total;
+        // Cap at what the player can actually pay (handles short-stack all-in calls)
+        const maxCanPay = ps.currentBet + ps.stack;
+        const effectiveTotal = Math.min(total, maxCanPay);
+        const diff = effectiveTotal - ps.currentBet;
+        ps.stack = Math.max(0, ps.stack - diff); state.currentPot += diff; ps.currentBet = effectiveTotal;
       }
     }
 
