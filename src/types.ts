@@ -123,6 +123,52 @@ export interface HandAnnotation {
   updated_at: string;
 }
 
+// ── Coach v3 types ────────────────────────────────────────────────────────────
+
+export interface CoachRelation {
+  id: string;
+  coach_id: string;
+  student_id: string;
+  created_at: string;
+  coach_email?: string;
+  student_email?: string;
+}
+
+export interface ReviewSession {
+  id: string;
+  student_id: string;
+  coach_id: string;
+  name: string;
+  status: 'pending' | 'annotating' | 'done' | 'confirmed';
+  created_at: string;
+  updated_at: string;
+  finalized_at: string | null;
+  student_confirmed_at: string | null;
+  // computed server-side (not stored as column, derived from hands_json length)
+  hands_count?: number;
+  // joined
+  student_email?: string;
+  coach_email?: string;
+  annotations_count?: number;
+}
+
+export interface ReviewAnnotation {
+  id: string;
+  review_session_id: string;
+  hand_key: string;
+  author_id: string;
+  author_name: string;
+  author_role: string;
+  text: string;
+  tags: string[];
+  starred: boolean;
+  street: string;
+  severity: 'info' | 'warning' | 'critical';
+  step_index?: number;
+  study_links?: StudyLink[];
+  updated_at: string;
+}
+
 export interface GameState {
   currentStep: number;
   currentPot: number;

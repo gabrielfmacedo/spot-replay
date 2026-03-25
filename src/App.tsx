@@ -25,6 +25,7 @@ import SessionManager from './components/SessionManager';
 import ShareModal from './components/ShareModal';
 import CollabNotesPanel from './components/CollabNotesPanel';
 import CoachSummaryModal from './components/CoachSummaryModal';
+import CoachPanel from './components/coach/CoachPanel';
 import FilterModal, { type NumericFilter } from './components/FilterModal';
 import NotificationBell from './components/NotificationBell';
 import NotificationToast from './components/NotificationToast';
@@ -48,6 +49,11 @@ import {
   loadPlayerNotesFromDB, upsertPlayerNote,
   getAllSessionAnnotations,
 } from './services/collabService';
+import {
+  getAllReviewAnnotations, upsertReviewAnnotation, deleteReviewAnnotation,
+  subscribeToReviewAnnotations, unsubscribeReview,
+} from './services/coachService';
+import type { ReviewAnnotation } from './types';
 import {
   getMyNotifications, markNotificationsRead, markAllRead,
   checkDripNotifications, subscribeToMyNotifications,
@@ -190,6 +196,10 @@ const App: React.FC = () => {
   const [shareTarget,      setShareTarget]      = useState<ReplaySession | null>(null);
   const [collabAnnotations, setCollabAnnotations] = useState<Record<string, HandAnnotation[]>>({});
   const [showAISummary,    setShowAISummary]     = useState(false);
+  const [showCoachPanel,   setShowCoachPanel]    = useState(false);
+  const [activeReview,     setActiveReview]      = useState<{ id: string; role: 'coach' | 'student'; name: string } | null>(null);
+  const [reviewAnnotations, setReviewAnnotations] = useState<Record<string, ReviewAnnotation[]>>({});
+  const [filterAnnotatedReviewId, setFilterAnnotatedReviewId] = useState<string | null>(null);
   const [showIdeasPage,    setShowIdeasPage]     = useState(false);
   const [showUserMenu,     setShowUserMenu]      = useState(false);
   const [showLangPicker,   setShowLangPicker]    = useState(false);
@@ -334,12 +344,26 @@ const App: React.FC = () => {
       window.history.replaceState(null, '', window.location.pathname);
       return;
     }
-    // Check for ?session=UUID (cloud session invite link)
+    // Check for ?session=UUID (legacy cloud session invite link)
     const params = new URLSearchParams(window.location.search);
     const sessionParam = params.get('session');
     if (sessionParam) {
       window.history.replaceState(null, '', window.location.pathname);
       setShowSessionMgr(true);
+      return;
+    }
+    // Check for ?coach_invite=TOKEN — open coach panel to accept invite
+    const coachInviteParam = params.get('coach_invite');
+    if (coachInviteParam) {
+      window.history.replaceState(null, '', window.location.pathname);
+      setShowCoachPanel(true);
+      return;
+    }
+    // Check for ?open_review=ID — notification deep link
+    const openReviewParam = params.get('open_review');
+    if (openReviewParam) {
+      window.history.replaceState(null, '', window.location.pathname);
+      setShowCoachPanel(true);
       return;
     }
     const shareParam = params.get('share');
@@ -525,8 +549,16 @@ const App: React.FC = () => {
         }
         return true;
       });
-    return handsReversed ? [...filtered].reverse() : filtered;
-  }, [hands, sidebarFilter, sidebarSearch, handNotes, positionFilter, tagFilter, stackBBFilter, bbValueFilter, handsReversed]);
+    // Coach review: filter to only annotated hands
+    const afterAnnotationFilter = filterAnnotatedReviewId
+      ? filtered.filter(({ hand }) => {
+          const key = `${hand.room}_${hand.id}`;
+          return (reviewAnnotations[key]?.length ?? 0) > 0;
+        })
+      : filtered;
+
+    return handsReversed ? [...afterAnnotationFilter].reverse() : afterAnnotationFilter;
+  }, [hands, sidebarFilter, sidebarSearch, handNotes, positionFilter, tagFilter, stackBBFilter, bbValueFilter, handsReversed, filterAnnotatedReviewId, reviewAnnotations]);
 
   // ── Step effect ───────────────────────────────────────────────────────────
   // Tracks previous hand to distinguish "hand changed" from "toggle changed"
@@ -991,7 +1023,7 @@ const App: React.FC = () => {
         {showSettings && (
           <div className="px-3 py-3 border-b border-white/5 space-y-3 shrink-0 bg-white/[0.02]">
             <div>
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Layout</p>
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">{t('layout')}</p>
               <div className="flex gap-1.5 mb-3">
                 {([
                   { key: 'classic', label: '◼ Classic' },
@@ -1005,7 +1037,7 @@ const App: React.FC = () => {
               </div>
               <>
                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mt-2">
-                  {tableLayout === 'classic' ? 'Mesa' : 'Borda'}
+                  {tableLayout === 'classic' ? t('table') : t('border')}
                 </p>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {THEMES.map(t => (
@@ -1015,7 +1047,7 @@ const App: React.FC = () => {
                   ))}
                 </div>
               </>
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mt-2">Cartas — Verso</p>
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5 mt-2">{t('cardBack')}</p>
               <div className="flex flex-wrap gap-2 mb-2">
                 {([
                   { id: 'red',   color: '#991b1b', label: 'Vermelho' },
@@ -1029,7 +1061,7 @@ const App: React.FC = () => {
                 ))}
               </div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-slate-300">Baralho 4 cores</span>
+                <span className="text-[10px] text-slate-300">{t('fourColor')}</span>
                 <div className="flex gap-1">
                   {(['off', 'text', 'bg'] as const).map(s => (
                     <button key={s} onClick={() => setCardStyle(s)}
@@ -1042,12 +1074,12 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-2">
               {([
-                ['Stacks em BB',      displayMode === 'bb',  () => setDisplayMode(p => p === 'chips' ? 'bb' : 'chips')],
-                ['Ocultar nomes',     hidePlayerNames,       () => setHidePlayerNames(p => !p)],
-                ['Ocultar resultados',hideResults,           () => setHideResults(p => !p)],
-                ['Jump to Hero',      autoJumpHero,          () => setAutoJumpHero(p => !p)],
-                ['Alerta de ação',    actingGlow,            () => setActingGlow(p => !p)],
-                ['Mostrar SPR',       showSPR,               () => setShowSPR(p => !p)],
+                [t('stacksBB'),    displayMode === 'bb',  () => setDisplayMode(p => p === 'chips' ? 'bb' : 'chips')],
+                [t('hideNames'),   hidePlayerNames,       () => setHidePlayerNames(p => !p)],
+                [t('hideResults'), hideResults,           () => setHideResults(p => !p)],
+                [t('jumpHero'),    autoJumpHero,          () => setAutoJumpHero(p => !p)],
+                [t('actingGlow'),  actingGlow,            () => setActingGlow(p => !p)],
+                [t('showSPR'),     showSPR,               () => setShowSPR(p => !p)],
               ] as [string, boolean, () => void][]).map(([label, active, toggle]) => (
                 <label key={label} className="flex items-center justify-between cursor-pointer">
                   <span className="text-[10px] text-slate-300">{label}</span>
@@ -1137,8 +1169,10 @@ const App: React.FC = () => {
             const note = handNotes[noteKey];
             const hasNote = note?.text || (note?.tags?.length ?? 0) > 0;
             const isStarred = note?.starred;
-            const coachAnns = collabAnnotations[noteKey] ?? [];
-            const hasCoachNote = coachAnns.some(a => a.author_role === 'coach' || a.author_role === 'owner');
+            const coachAnns = activeReview
+              ? (reviewAnnotations[noteKey] ?? [])
+              : (collabAnnotations[noteKey] ?? []);
+            const hasCoachNote = coachAnns.some(a => a.author_role === 'coach' || a.author_role === 'owner' || activeReview);
             const hasWarning = coachAnns.some(a => a.severity === 'warning' || a.severity === 'critical');
             return (
               <button key={hand.id + idx} onClick={() => { setCurrentHandIndex(idx); setCurrentStep(0); setIsPlaying(false); }}
@@ -1280,6 +1314,20 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-black text-slate-400 w-8 text-center">{Math.round(tableZoom * 100)}%</span>
                 <button onClick={() => setTableZoom(z => Math.min(1.5, +(z + 0.1).toFixed(1)))} className="text-slate-400 hover:text-white transition-colors p-0.5"><ZoomIn size={12} /></button>
               </div>
+            )}
+            {/* Coach button */}
+            {currentUser && (
+              <button
+                onClick={() => setShowCoachPanel(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
+                  activeReview
+                    ? 'bg-blue-600/20 border-blue-500/30 text-blue-300'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/10'
+                }`}
+              >
+                <Layers size={12} /> COACH
+                {activeReview && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />}
+              </button>
             )}
             {/* Share app button */}
             <div className="relative" ref={appShareRef}>
@@ -1438,7 +1486,7 @@ const App: React.FC = () => {
                   <div className="fixed inset-0 z-[400] bg-[#02040a]/90 backdrop-blur-sm flex flex-col items-center justify-center gap-6">
                     <Loader2 size={48} className="text-blue-500 animate-spin" />
                     <div className="text-center">
-                      <p className="text-xl font-black text-white uppercase italic mb-3">Processando {parsingProgress}%</p>
+                      <p className="text-xl font-black text-white uppercase italic mb-3">{t('importParsing')} {parsingProgress}%</p>
                       <div className="w-64 h-1.5 bg-white/5 rounded-full overflow-hidden">
                         <div className="h-full bg-blue-600 transition-all duration-300 shadow-[0_0_12px_rgba(37,99,235,0.8)]" style={{ width: `${parsingProgress}%` }} />
                       </div>
@@ -1449,7 +1497,7 @@ const App: React.FC = () => {
                 {/* Header text */}
                 <div className="text-center">
                   <h1 className="text-2xl font-black text-white uppercase italic tracking-tight">
-                    Importe suas mãos
+                    {t('importTitle')}
                   </h1>
                   <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-1.5">
                     PokerStars · GGPoker · 888poker · PartyPoker · WPN · Winamax
@@ -1471,8 +1519,8 @@ const App: React.FC = () => {
                       <FileUp size={22} className="text-slate-500 group-hover:text-blue-400 transition-colors" />
                     </div>
                     <div className="text-center">
-                      <p className="text-[12px] font-black text-slate-300 group-hover:text-white transition-colors">Arraste o arquivo .txt</p>
-                      <p className="text-[10px] text-slate-600 mt-0.5">ou clique para selecionar</p>
+                      <p className="text-[12px] font-black text-slate-300 group-hover:text-white transition-colors">{t('importDrag')}</p>
+                      <p className="text-[10px] text-slate-600 mt-0.5">{t('importBrowse')}</p>
                     </div>
                     <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".txt" className="hidden" />
                   </div>
@@ -1490,7 +1538,7 @@ const App: React.FC = () => {
                       disabled={!importText.trim() || isParsing}
                       className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl font-black text-white text-[11px] uppercase tracking-widest transition-all active:scale-95"
                     >
-                      Iniciar Review
+                      {t('importBtn')}
                     </button>
                   </div>
                 </div>
@@ -1502,7 +1550,7 @@ const App: React.FC = () => {
                       onClick={() => setShowImport(false)}
                       className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-300 transition-colors"
                     >
-                      ← Voltar para o review
+                      ← {t('back')}
                     </button>
                   </div>
                 )}
@@ -1647,6 +1695,37 @@ const App: React.FC = () => {
                     currentStep={currentStep}
                     allAnnotations={Object.values(collabAnnotations).flat()}
                     onOpenAISummary={() => setShowAISummary(true)}
+                  />
+                </div>
+              )}
+
+              {/* ── Review mode note panel (coach annotates review_sessions) ── */}
+              {showNotePanel && currentHand && activeReview && !cloudSession && currentUser && (
+                <div className="w-[95%] max-w-4xl mb-1 bg-[#0a0f1a]/95 backdrop-blur-3xl border border-white/10 rounded-[1.5rem] shadow-2xl overflow-hidden z-[249] shrink-0">
+                  <CollabNotesPanel
+                    session={{ id: activeReview.id, owner_id: currentUser.id, owner_email: currentUser.email, name: activeReview.name, room: null, hand_count: 0, created_at: '', updated_at: '' }}
+                    handKey={handKey}
+                    currentUser={currentUser}
+                    userRole={activeReview.role === 'coach' ? 'coach' : 'student'}
+                    canAnnotate={activeReview.role === 'coach'}
+                    currentStreet={gameState.street}
+                    currentStep={currentStep}
+                    allAnnotations={Object.values(reviewAnnotations).flat() as any}
+                    onSaveOverride={async payload => {
+                      const ann = await upsertReviewAnnotation(
+                        activeReview.id, handKey, payload,
+                        currentUser.name || currentUser.email,
+                        activeReview.role
+                      );
+                      // Update local index
+                      setReviewAnnotations(prev => {
+                        const existing = prev[handKey] ?? [];
+                        const idx = existing.findIndex(a => a.review_session_id === ann.review_session_id && a.hand_key === ann.hand_key && a.author_id === ann.author_id && a.street === ann.street);
+                        const updated = idx >= 0 ? existing.map((a, i) => i === idx ? ann : a) : [...existing, ann];
+                        return { ...prev, [handKey]: updated };
+                      });
+                      return ann as any;
+                    }}
                   />
                 </div>
               )}
@@ -1934,6 +2013,66 @@ const App: React.FC = () => {
           annotations={Object.values(collabAnnotations).flat()}
           onClose={() => setShowAISummary(false)}
         />
+      )}
+
+      {/* ── Coach Panel ───────────────────────────────────────────────────────── */}
+      {showCoachPanel && currentUser && (
+        <CoachPanel
+          currentUser={currentUser}
+          currentHands={hands}
+          onOpenReview={async (reviewId, role, reviewHands, sessionName) => {
+            setHands(reviewHands);
+            setCurrentHandIndex(0);
+            setCurrentStep(0);
+            setIsPlaying(false);
+            setShowImport(false);
+            setActiveReview({ id: reviewId, role, name: sessionName });
+            setShowCoachPanel(false);
+            // Load all annotations for sidebar indicators
+            const anns = await getAllReviewAnnotations(reviewId);
+            setReviewAnnotations(anns);
+            // Realtime sync
+            subscribeToReviewAnnotations(
+              reviewId,
+              ann => setReviewAnnotations(prev => {
+                const key = ann.hand_key;
+                const existing = prev[key] ?? [];
+                const idx = existing.findIndex(a => a.id === ann.id);
+                const updated = idx >= 0
+                  ? existing.map((a, i) => i === idx ? ann : a)
+                  : [...existing, ann];
+                return { ...prev, [key]: updated };
+              }),
+              (id, handKey) => setReviewAnnotations(prev => ({
+                ...prev,
+                [handKey]: (prev[handKey] ?? []).filter(a => a.id !== id),
+              }))
+            );
+          }}
+          onFilterAnnotated={reviewId => {
+            setFilterAnnotatedReviewId(reviewId);
+            setShowCoachPanel(false);
+          }}
+          onClose={() => setShowCoachPanel(false)}
+        />
+      )}
+
+      {/* Active review badge */}
+      {activeReview && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[200] pointer-events-none">
+          <div className="flex items-center gap-2 bg-[#0a0f1a] border border-blue-500/30 rounded-full px-4 py-1.5 shadow-xl">
+            <Layers size={10} className="text-blue-400" />
+            <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest">
+              REVIEW: {activeReview.name.slice(0, 25)} · {activeReview.role === 'coach' ? 'COACH' : 'ALUNO'}
+            </span>
+            <button
+              onClick={() => { setActiveReview(null); setReviewAnnotations({}); setFilterAnnotatedReviewId(null); }}
+              className="pointer-events-auto text-slate-600 hover:text-white transition-colors ml-1"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        </div>
       )}
 
     </div>

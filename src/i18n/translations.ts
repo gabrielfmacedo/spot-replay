@@ -52,9 +52,9 @@ export const T = {
   link:        { pt: 'Link',           en: 'Link',            es: 'Enlace' },
 
   // ── Import panel ──────────────────────────────────────────────────────────
-  importTitle:   { pt: 'Importar Hand History', en: 'Import Hand History', es: 'Importar Hand History' },
-  importDrag:    { pt: 'Arraste um arquivo .txt/.hh aqui ou', en: 'Drag a .txt/.hh file here or', es: 'Arrastra un archivo .txt/.hh aquí o' },
-  importBrowse:  { pt: 'escolha um arquivo', en: 'browse file', es: 'elige un archivo' },
+  importTitle:   { pt: 'Importe suas mãos', en: 'Import your hands', es: 'Importa tus manos' },
+  importDrag:    { pt: 'Arraste o arquivo .txt', en: 'Drag the .txt file', es: 'Arrastra el archivo .txt' },
+  importBrowse:  { pt: 'ou clique para selecionar', en: 'or click to select', es: 'o haz clic para seleccionar' },
   importPaste:   { pt: 'Ou cole o hand history aqui...', en: 'Or paste hand history here...', es: 'O pega el hand history aquí...' },
   importBtn:     { pt: 'IMPORTAR', en: 'IMPORT', es: 'IMPORTAR' },
   importParsing: { pt: 'Processando...', en: 'Processing...', es: 'Procesando...' },

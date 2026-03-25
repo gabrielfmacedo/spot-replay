@@ -22,6 +22,12 @@ interface CollabNotesPanelProps {
   currentStep?: number;
   allAnnotations?: HandAnnotation[];   // todas anotações da sessão (para o resumo IA)
   onOpenAISummary?: () => void;
+  /** When provided, overrides the default DB save (used for review_annotations). */
+  onSaveOverride?: (payload: {
+    text: string; tags: string[]; starred: boolean;
+    street: string; severity: 'info' | 'warning' | 'critical';
+    step_index?: number;
+  }) => Promise<HandAnnotation>;
 }
 
 const PRESET_TAGS = ['Bluff', 'Value', 'Erro', 'Boa Jogada', 'Revisar', 'GTO', 'Exploitativo', 'Sizing', 'Spot'];
@@ -46,7 +52,7 @@ const streetLabel = (s: string) => STREETS.find(st => st.id === s)?.label ?? s;
 
 const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
   session, handKey, currentUser, userRole, canAnnotate, currentStreet, currentStep,
-  allAnnotations, onOpenAISummary,
+  allAnnotations, onOpenAISummary, onSaveOverride,
 }) => {
   const [annotations, setAnnotations] = useState<HandAnnotation[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -127,12 +133,12 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
     setSaving(true);
     try {
       const roleName = userRole === 'owner' ? 'coach' : userRole;
-      await upsertAnnotation(
-        session.id, handKey,
-        { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: studyLinks },
-        currentUser.name || currentUser.email,
-        roleName,
-      );
+      const payload = { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: studyLinks };
+      if (onSaveOverride) {
+        await onSaveOverride({ text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined });
+      } else {
+        await upsertAnnotation(session.id, handKey, payload, currentUser.name || currentUser.email, roleName);
+      }
     } catch (_) { /* silent */ } finally { setSaving(false); }
   };
 
@@ -156,12 +162,15 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
     saveTimerRef.current = setTimeout(() => {
       if (!canAnnotate) return;
       const roleName = userRole === 'owner' ? 'coach' : userRole;
-      upsertAnnotation(
-        session.id, handKey,
-        { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: newLinks },
-        currentUser.name || currentUser.email,
-        roleName,
-      ).catch(() => {});
+      if (onSaveOverride) {
+        onSaveOverride({ text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined }).catch(() => {});
+      } else {
+        upsertAnnotation(
+          session.id, handKey,
+          { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: newLinks },
+          currentUser.name || currentUser.email, roleName,
+        ).catch(() => {});
+      }
     }, 300);
   };
 
