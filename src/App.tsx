@@ -8,7 +8,10 @@ import {
   LogOut, User, Maximize2, Minimize2, Settings2, Shield,
   ZoomIn, ZoomOut, SlidersHorizontal, ChevronDown, Star, MessageSquare, ArrowDownUp, Info
 } from 'lucide-react';
-import { HandHistory, PlayerAction, HandNotes as HandNotesMap, HandNote, ActionType, ReplaySession } from './types';
+import { HandHistory, PlayerAction, HandNotes as HandNotesMap, HandNote, ActionType, ReplaySession, ActionWithPause } from './types';
+import { useGameState } from './hooks/useGameState';
+import { useLang } from './i18n/useLanguage';
+import { LANGUAGES } from './i18n/translations';
 import { parseHandHistory } from './services/parser';
 import PlayerSeat from './components/PlayerSeat';
 import Card from './components/Card';
@@ -119,6 +122,7 @@ const App: React.FC = () => {
   const [displayMode,      setDisplayMode]      = useState<'chips' | 'bb'>('chips');
   const [isParsing,        setIsParsing]        = useState(false);
   const [parsingProgress,  setParsingProgress]  = useState(0);
+  const [parseFailures,    setParseFailures]    = useState<{ failedCount: number; totalBlocks: number } | null>(null);
   const [visibleHandsCount,setVisibleHandsCount]= useState(40);
   const [sidebarSearch,    setSidebarSearch]    = useState('');
   const [sidebarFilter,    setSidebarFilter]    = useState<'all' | 'win' | 'lose' | 'fold' | 'star' | 'vpip' | 'pfr' | '3bet' | 'call'>('all');
@@ -188,6 +192,8 @@ const App: React.FC = () => {
   const [showAISummary,    setShowAISummary]     = useState(false);
   const [showIdeasPage,    setShowIdeasPage]     = useState(false);
   const [showUserMenu,     setShowUserMenu]      = useState(false);
+  const [showLangPicker,   setShowLangPicker]    = useState(false);
+  const { lang, setLang, t } = useLang();
   const [showHandInfo,     setShowHandInfo]      = useState(false);
   const userMenuRef    = useRef<HTMLDivElement>(null);
   const handInfoRef    = useRef<HTMLDivElement>(null);
@@ -415,9 +421,9 @@ const App: React.FC = () => {
     return 1;
   }, [currentHand]);
 
-  const actionsWithPauses = useMemo(() => {
+  const actionsWithPauses = useMemo((): ActionWithPause[] => {
     if (!currentHand) return [];
-    const enriched: (PlayerAction | { type: 'STREET_START'; street: string })[] = [];
+    const enriched: ActionWithPause[] = [];
 
     const pre      = currentHand.actions.filter(a => a.street === 'PREFLOP' && a.type !== 'POST_SB' && a.type !== 'POST_BB');
     const flop     = currentHand.actions.filter(a => a.street === 'FLOP');
@@ -760,21 +766,51 @@ const App: React.FC = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Import ────────────────────────────────────────────────────────────────
-  const processImportIncremental = async (text: string) => {
-    setIsParsing(true); setParsingProgress(0); setHands([]);
-    const blocks = text.split(/(?=PokerStars Hand #|\*{5} Hand(?:History| #| ID)|888poker|Winamax Poker|(?:^|\n)Poker Hand #|(?:^|\n)Game #\d)/i).filter(b => b.trim().length > 50);
-    const total = blocks.length;
-    if (total === 0) { alert('Nenhum histórico válido encontrado.'); setIsParsing(false); return; }
-    let processed = 0; const all: HandHistory[] = [];
-    const processChunk = () => {
-      const end = Math.min(processed + BATCH_SIZE, total);
-      const parsed = parseHandHistory(blocks.slice(processed, end).join('\n\n'));
-      all.push(...parsed); processed = end;
-      setParsingProgress(Math.round((processed / total) * 100));
-      if (processed < total) setTimeout(processChunk, 10);
-      else { setHands(all); setIsParsing(false); setShowImport(false); setShowStats(false); setCurrentHandIndex(0); setCurrentStep(0); setIsPlaying(false); }
+  const workerRef = useRef<Worker | null>(null);
+
+  const processImportIncremental = (text: string) => {
+    setIsParsing(true); setParsingProgress(0); setHands([]); setParseFailures(null);
+
+    // Terminate any previously running worker
+    workerRef.current?.terminate();
+
+    const worker = new Worker(new URL('./workers/parser.worker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = worker;
+
+    worker.onmessage = (e: MessageEvent) => {
+      const msg = e.data;
+      if (msg.type === 'progress') {
+        setParsingProgress(msg.percent);
+      } else if (msg.type === 'done') {
+        setHands(msg.hands);
+        setIsParsing(false);
+        setShowImport(false);
+        setShowStats(false);
+        setCurrentHandIndex(0);
+        setCurrentStep(0);
+        setIsPlaying(false);
+        if (msg.failedCount > 0) setParseFailures({ failedCount: msg.failedCount, totalBlocks: msg.totalBlocks });
+        if (msg.totalBlocks === 0) alert('Nenhum histórico válido encontrado.');
+        worker.terminate();
+        workerRef.current = null;
+      }
     };
-    processChunk();
+
+    worker.onerror = () => {
+      // Fallback to main-thread parsing if worker fails
+      worker.terminate();
+      workerRef.current = null;
+      const result = parseHandHistory(text);
+      setHands(result.hands);
+      setIsParsing(false);
+      setShowImport(false);
+      setCurrentHandIndex(0);
+      setCurrentStep(0);
+      setIsPlaying(false);
+      if (result.failedCount > 0) setParseFailures({ failedCount: result.failedCount, totalBlocks: result.totalBlocks });
+    };
+
+    worker.postMessage({ text });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -791,129 +827,8 @@ const App: React.FC = () => {
     if (scrollTop + clientHeight >= scrollHeight - 200) setVisibleHandsCount(p => Math.min(p + 40, filteredHandsWithIndex.length));
   };
 
-  // ── Game state ────────────────────────────────────────────────────────────
-  const gameState = useMemo(() => {
-    const state: any = { currentStep, currentPot: 0, street: 'PREFLOP', visibleBoard: [], playerStates: {} };
-    if (!currentHand) return state;
-    state.currentPot = currentHand.totalPot;
-
-    currentHand.players.forEach(p => {
-      state.playerStates[p.name] = { stack: p.initialStack, currentBet: 0, hasFolded: false, isActing: false, lastActionType: '', revealedCards: undefined, isWinner: false, isLoser: false };
-    });
-
-    currentHand.actions.filter(a => a.type === 'POST_SB' || a.type === 'POST_BB').forEach(a => {
-      const ps = state.playerStates[a.playerName]; if (!ps) return;
-      ps.stack -= (a.amount || 0); ps.currentBet = a.amount || 0; state.currentPot += (a.amount || 0);
-    });
-
-    let maxBet = 0;
-    Object.values(state.playerStates).forEach((ps: any) => { if (ps.currentBet > maxBet) maxBet = ps.currentBet; });
-
-    const winners   = new Set(currentHand.actions.filter(a => a.type === 'COLLECTED').map(a => a.playerName));
-    const showActs  = currentHand.actions.filter(a => a.type === 'SHOWS');
-    const muckActs  = currentHand.actions.filter(a => a.type === 'MUCKS');
-    const heroName  = currentHand.players.find(p => p.isHero)?.name ?? '';
-
-    for (let i = 0; i < currentStep; i++) {
-      const action = actionsWithPauses[i];
-      if ((action as any).type === 'STREET_START') {
-        const newStreet = (action as any).street;
-        state.street = newStreet; maxBet = 0;
-        Object.values(state.playerStates).forEach((ps: any) => { ps.currentBet = 0; ps.lastActionType = ''; });
-        // All-in runout: reveal all hole cards immediately, before board is dealt
-        if (newStreet === 'ALLIN_REVEAL') {
-          if (!hideResults) {
-            showActs.forEach(a => {
-              const ps = state.playerStates[a.playerName];
-              if (ps) ps.revealedCards = a.cards;
-            });
-          } else {
-            showActs.filter(a => a.playerName === heroName).forEach(a => {
-              const ps = state.playerStates[a.playerName];
-              if (ps) ps.revealedCards = a.cards;
-            });
-          }
-          continue; // street stays 'ALLIN_REVEAL'; board revealed by subsequent FLOP/TURN/RIVER steps
-        }
-        // At showdown: reveal all cards and winners/losers simultaneously
-        if (newStreet === 'SHOWDOWN') {
-          if (!hideResults) {
-            showActs.forEach(a => {
-              const ps = state.playerStates[a.playerName];
-              if (ps) ps.revealedCards = a.cards;
-            });
-            muckActs.forEach(a => {
-              const ps = state.playerStates[a.playerName];
-              if (ps) { ps.lastActionType = 'MUCKS'; ps.revealedCards = undefined; }
-            });
-            currentHand.players.forEach(p => {
-              const ps = state.playerStates[p.name]; if (!ps) return;
-              if (winners.has(p.name)) ps.isWinner = true;
-              else if (!ps.hasFolded) ps.isLoser = true;
-            });
-          } else {
-            // hideResults: only reveal hero cards
-            showActs.filter(a => a.playerName === heroName).forEach(a => {
-              const ps = state.playerStates[a.playerName];
-              if (ps) ps.revealedCards = a.cards;
-            });
-          }
-        }
-        continue;
-      }
-      const pa = action as PlayerAction;
-      const ps = state.playerStates[pa.playerName]; if (!ps) continue;
-      ps.lastActionType = pa.type;
-
-      if (pa.type === 'FOLD') { ps.hasFolded = true; ps.currentBet = 0; }
-      else if (pa.type === 'SHOWS') {
-        if (!hideResults || pa.playerName === heroName) ps.revealedCards = pa.cards;
-      }
-      else if (pa.type === 'MUCKS') { ps.lastActionType = 'MUCKS'; ps.revealedCards = undefined; }
-      else if (pa.type === 'CHECK' || pa.type === 'COLLECTED') { /* nothing */ }
-      else if (pa.type === 'UNCALLED_RETURN') {
-        const amt = pa.amount || 0;
-        ps.stack += amt; state.currentPot = Math.max(0, state.currentPot - amt); ps.currentBet = Math.max(0, ps.currentBet - amt);
-      } else {
-        let total = pa.amount || 0;
-        if (pa.type === 'CALL') total = maxBet;
-        if (pa.type === 'RAISE' || pa.type === 'BET') { if (total > maxBet) maxBet = total; }
-        // Cap at what the player can actually pay (handles short-stack all-in calls)
-        const maxCanPay = ps.currentBet + ps.stack;
-        const effectiveTotal = Math.min(total, maxCanPay);
-        const diff = effectiveTotal - ps.currentBet;
-        ps.stack = Math.max(0, ps.stack - diff); state.currentPot += diff; ps.currentBet = effectiveTotal;
-      }
-    }
-
-    if (currentStep === actionsWithPauses.length) {
-      currentHand.players.forEach(p => {
-        const ps = state.playerStates[p.name]; if (!ps) return;
-        if (!hideResults) {
-          if (winners.has(p.name)) ps.isWinner = true;
-          else if (!ps.hasFolded) ps.isLoser = true;
-        }
-        const sa = showActs.find(a => a.playerName === p.name);
-        if (sa && (!hideResults || p.name === heroName)) ps.revealedCards = sa.cards;
-        const ma = muckActs.find(a => a.playerName === p.name);
-        if (ma) { ps.lastActionType = 'MUCKS'; ps.revealedCards = undefined; }
-      });
-    }
-
-    const sIdx = ['PREFLOP', 'FLOP', 'TURN', 'RIVER', 'SHOWDOWN'].indexOf(state.street);
-    if (sIdx >= 1) state.visibleBoard = currentHand.board.slice(0, 3);
-    if (sIdx >= 2) state.visibleBoard = currentHand.board.slice(0, 4);
-    if (sIdx >= 3) state.visibleBoard = currentHand.board.slice(0, 5);
-
-    if (currentStep < actionsWithPauses.length && state.street !== 'SHOWDOWN') {
-      const next = actionsWithPauses[currentStep];
-      if (next && (next as any).type !== 'STREET_START') {
-        const ns = state.playerStates[(next as PlayerAction).playerName];
-        if (ns) ns.isActing = true;
-      }
-    }
-    return state;
-  }, [currentHand, currentStep, actionsWithPauses, hideResults]);
+  // ── Game state (extracted to src/hooks/useGameState.ts) ──────────────────
+  const gameState = useGameState(currentHand, currentStep, actionsWithPauses, hideResults);
 
   // ── SPR (Stack-to-Pot Ratio) ──────────────────────────────────────────────
   const spr = useMemo(() => {
@@ -1000,10 +915,10 @@ const App: React.FC = () => {
           SPOT <span className="text-blue-500">REPLAY</span>
         </h1>
         <p className="text-[15px] text-slate-300 leading-relaxed max-w-xs">
-          Para uma melhor experiência usando o Spot Replay, acesse o site através do navegador do seu computador ou notebook.
+          {t('mobileBlock')}
         </p>
         <div className="mt-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
-          <p className="text-[11px] text-slate-500">Disponível apenas para desktop</p>
+          <p className="text-[11px] text-slate-500">{t('desktopOnly')}</p>
         </div>
       </div>
     );
@@ -1041,8 +956,8 @@ const App: React.FC = () => {
           <div className="absolute inset-0 bg-blue-600/10 border-4 border-dashed border-blue-500 rounded-none" />
           <div className="relative z-10 bg-[#0a0f1a]/95 border border-blue-500 rounded-3xl px-16 py-10 flex flex-col items-center gap-4 shadow-[0_0_60px_rgba(59,130,246,0.3)]">
             <FileUp size={48} className="text-blue-400" />
-            <span className="text-xl font-black text-white uppercase tracking-widest">Soltar para importar</span>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">PS / GGPoker / 888 / Party / WPN / Winamax</span>
+            <span className="text-xl font-black text-white uppercase tracking-widest">{t('importDropHere')}</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{t('importSupported')}</span>
           </div>
         </div>
       )}
@@ -1052,14 +967,14 @@ const App: React.FC = () => {
 
         {/* Top action row: STATS | CONFIG */}
         <div className="p-2 border-b border-white/5 flex items-center gap-1 shrink-0">
-          <button onClick={() => setShowStats(true)} title="Estatísticas"
+          <button onClick={() => setShowStats(true)} title={t('sessionStats')}
             className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[9px] font-black uppercase text-slate-400 hover:text-blue-400 hover:bg-white/5 transition-colors">
-            <BarChart2 size={13} /> STATS
+            <BarChart2 size={13} /> {t('stats')}
           </button>
           <div className="w-px h-4 bg-white/10" />
-          <button onClick={() => setShowSettings(p => !p)} title="Configurações"
+          <button onClick={() => setShowSettings(p => !p)} title={t('config')}
             className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-[9px] font-black uppercase transition-colors ${showSettings ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
-            <Settings2 size={13} /> CONFIG
+            <Settings2 size={13} /> {t('config')}
           </button>
         </div>
 
@@ -1165,7 +1080,7 @@ const App: React.FC = () => {
           <div className="flex gap-1.5">
             <div className="relative flex-1">
               <Search size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-              <input type="text" value={sidebarSearch} onChange={e => setSidebarSearch(e.target.value)} placeholder="Buscar..."
+              <input type="text" value={sidebarSearch} onChange={e => setSidebarSearch(e.target.value)} placeholder={t('search')}
                 className="w-full bg-white/5 border border-white/10 rounded-lg pl-6 pr-6 py-1.5 text-[10px] text-slate-300 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors" />
               {sidebarSearch && <button onClick={() => setSidebarSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"><X size={9} /></button>}
             </div>
@@ -1176,14 +1091,14 @@ const App: React.FC = () => {
             </button>
             <button
               onClick={() => setHandsReversed(v => !v)}
-              title={handsReversed ? 'Ordem: antiga → nova' : 'Ordem: nova → antiga'}
+              title={handsReversed ? t('orderOldNew') : t('orderNewOld')}
               className={`p-1.5 rounded-lg border transition-all ${handsReversed ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}
             >
               <ArrowDownUp size={11} />
             </button>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{filteredHandsWithIndex.length} de {hands.length} mãos</span>
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{filteredHandsWithIndex.length} {t('handsCount')} {hands.length} {t('hands')}</span>
             <div className="flex items-center gap-2">
               {(sidebarFilter !== 'all' || positionFilter.length > 0 || tagFilter || stackBBFilter || bbValueFilter) && (
                 <button onClick={() => { setSidebarFilter('all'); setPositionFilter([]); setTagFilter(''); setStackBBFilter(null); setBBValueFilter(null); }} className="text-[9px] text-red-400 hover:text-red-300 font-black uppercase transition-colors">
@@ -1212,7 +1127,7 @@ const App: React.FC = () => {
           {hands.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-3 py-12 text-center px-4">
               <FileUp size={20} className="text-slate-700" />
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-700">Nenhuma mão importada</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-700">{t('noHandsImported')}</p>
             </div>
           )}
           {filteredHandsWithIndex.slice(0, visibleHandsCount).map(({ hand, idx }) => {
@@ -1373,7 +1288,7 @@ const App: React.FC = () => {
                 title="Compartilhar"
                 className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${showAppShare ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/10'}`}
               >
-                <Share2 size={12} /> Compartilhar
+                <Share2 size={12} /> {t('share')}
               </button>
               {showAppShare && (
                 <div className="absolute right-0 top-full mt-2 w-56 bg-[#0a0f1a] border border-white/10 rounded-2xl shadow-2xl z-[300] overflow-hidden">
@@ -1444,12 +1359,12 @@ const App: React.FC = () => {
                     <ChevronDown size={10} className={`transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
                   </button>
                   {showUserMenu && (
-                    <div className="absolute right-0 top-full mt-2 w-44 bg-[#0a0f1a] border border-white/10 rounded-2xl shadow-2xl z-[300] overflow-hidden py-1">
+                    <div className="absolute right-0 top-full mt-2 w-52 bg-[#0a0f1a] border border-white/10 rounded-2xl shadow-2xl z-[300] overflow-hidden py-1">
                       <button
                         onClick={() => { setShowProfile(true); setShowUserMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-slate-300 hover:text-white"
                       >
-                        <User size={12} className="text-slate-500" /> PERFIL
+                        <User size={12} className="text-slate-500" /> {t('menuProfile')}
                       </button>
                       <a
                         href="https://wa.me/5521990970439?text=Preciso+de+ajuda+no+Spot+Replay"
@@ -1458,20 +1373,43 @@ const App: React.FC = () => {
                         onClick={() => setShowUserMenu(false)}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-[#25D366] hover:text-[#25D366]"
                       >
-                        <MessageSquare size={12} /> SUPORTE
+                        <MessageSquare size={12} /> {t('menuSupport')}
                       </a>
                       <button
                         onClick={() => { setShowIdeasPage(true); setShowUserMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-amber-400 hover:text-amber-300"
                       >
-                        <Star size={12} /> IDEIAS
+                        <Star size={12} /> {t('menuIdeas')}
                       </button>
+                      {/* Language picker */}
+                      <button
+                        onClick={() => setShowLangPicker(v => !v)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors text-[11px] font-black text-slate-300 hover:text-white"
+                      >
+                        <span className="flex items-center gap-3">
+                          <span className="text-slate-500 text-[12px]">🌐</span> {t('menuLanguage')}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{LANGUAGES.find(l => l.id === lang)?.flag}</span>
+                      </button>
+                      {showLangPicker && (
+                        <div className="bg-white/[0.04] border-t border-white/5">
+                          {LANGUAGES.map(l => (
+                            <button key={l.id}
+                              onClick={() => { setLang(l.id); setShowLangPicker(false); setShowUserMenu(false); }}
+                              className={`w-full flex items-center gap-3 px-6 py-2 text-[10px] font-black transition-colors ${lang === l.id ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                            >
+                              <span>{l.flag}</span> {l.label}
+                              {lang === l.id && <span className="ml-auto text-blue-400">✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="border-t border-white/5 my-1" />
                       <button
                         onClick={() => { handleLogout(); setShowUserMenu(false); }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-500/10 transition-colors text-[11px] font-black text-slate-500 hover:text-red-400"
                       >
-                        <LogOut size={12} /> SAIR
+                        <LogOut size={12} /> {t('menuLogout')}
                       </button>
                     </div>
                   )}
@@ -1479,11 +1417,11 @@ const App: React.FC = () => {
               </div>
             ) : (
               <button onClick={() => setShowAuthModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-black uppercase text-white transition-all border border-white/20">
-                <User size={13} /> ENTRAR
+                <User size={13} /> {t('login')}
               </button>
             )}
             <button onClick={() => { setShowImport(true); setImportText(''); }} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-[10px] font-black transition-all shadow-lg active:scale-95">
-              IMPORTAR
+              {t('importBtn')}
             </button>
           </div>
         </header>
@@ -1544,7 +1482,7 @@ const App: React.FC = () => {
                     <textarea
                       value={importText}
                       onChange={e => setImportText(e.target.value)}
-                      placeholder="Ou cole o hand history aqui..."
+                      placeholder={t('importPaste')}
                       className="flex-1 w-full bg-white/[0.03] border border-white/10 rounded-2xl px-4 py-3 font-mono text-[10px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-blue-500/40 resize-none transition-colors"
                     />
                     <button
@@ -1875,6 +1813,22 @@ const App: React.FC = () => {
           onCreateTag={name => setCustomTags(prev => prev.includes(name) ? prev : [...prev, name])}
           onClose={() => setShowNotePanel(false)}
         />
+      )}
+
+      {/* ── Parse failures banner ────────────────────────────────────────────── */}
+      {parseFailures && parseFailures.failedCount > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[550] flex items-center gap-3 bg-[#0d1420] border border-amber-500/30 rounded-2xl px-5 py-3 shadow-[0_8px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl max-w-sm">
+          <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 font-black text-[11px]">!</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-black text-white">
+              {parseFailures.failedCount} {t('parseFailTitle')}
+            </p>
+            <p className="text-[9px] text-slate-400">
+              {parseFailures.totalBlocks - parseFailures.failedCount} {t('parseFailOf')} {parseFailures.totalBlocks} {t('parseFailSub')}
+            </p>
+          </div>
+          <button onClick={() => setParseFailures(null)} className="text-slate-500 hover:text-white shrink-0 transition-colors"><X size={14} /></button>
+        </div>
       )}
 
       {/* ── Notification Toast (real-time, user is online) ───────────────────── */}

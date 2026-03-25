@@ -1,13 +1,22 @@
 
 export type ActionType = 'FOLD' | 'CHECK' | 'CALL' | 'RAISE' | 'BET' | 'POST_SB' | 'POST_BB' | 'COLLECTED' | 'SHOWS' | 'MUCKS' | 'UNCALLED_RETURN';
 
+export type StreetName = 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN' | 'ALLIN_REVEAL';
+
 export interface PlayerAction {
   playerName: string;
   type: ActionType;
   amount?: number;
-  cards?: string[]; 
+  cards?: string[];
   street: 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN';
 }
+
+export interface StreetStartAction {
+  type: 'STREET_START';
+  street: StreetName;
+}
+
+export type ActionWithPause = PlayerAction | StreetStartAction;
 
 export interface Player {
   name: string;

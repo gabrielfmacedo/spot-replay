@@ -847,13 +847,17 @@ export const parseHandHistory = (rawText: string): HandHistory[] => {
   };
 
   const results: HandHistory[] = [];
+  let failedCount = 0;
   for (const block of blocks) {
     try {
       const hand = parsers[format](block);
       if (hand) { hand.rawText = block.trim(); results.push(hand); }
+      else failedCount++;
     } catch {
-      // skip malformed block
+      failedCount++;
     }
   }
-  return results;
+  return { hands: results, failedCount, totalBlocks: blocks.length, format };
 };
+
+export type ParseResult = ReturnType<typeof parseHandHistory>;

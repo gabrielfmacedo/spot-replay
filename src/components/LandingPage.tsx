@@ -5,6 +5,7 @@ import {
   Layers, MessageSquare, BarChart2, Globe,
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { useLang } from '../i18n/useLanguage';
 
 interface LandingPageProps {
   onSuccess: (user: { id: string; email: string; name: string }) => void;
@@ -75,6 +76,7 @@ interface RegisterFormProps {
 }
 
 const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess }) => {
+  const { t } = useLang();
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [phone, setPhone]       = useState('');
@@ -119,10 +121,10 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess }) => {
         <CheckCircle2 size={26} className="text-emerald-400" />
       </div>
       <div>
-        <p className="text-white font-black text-sm mb-1">Verifique seu e-mail</p>
+        <p className="text-white font-black text-sm mb-1">{t('emailVerifyTitle')}</p>
         <p className="text-slate-500 text-[12px] leading-relaxed max-w-xs">
-          Enviamos um link para <span className="text-slate-300 font-semibold">{email}</span>.
-          Confirme e volte aqui para entrar.
+          {t('emailVerifySent')} <span className="text-slate-300 font-semibold">{email}</span>.{' '}
+          {t('emailVerifyBack')}
         </p>
       </div>
     </div>
@@ -131,28 +133,28 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess }) => {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">Nome completo</label>
+        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('registerName')}</label>
         <input type="text" required value={name} onChange={e => setName(e.target.value)}
           placeholder="João Silva"
           className="w-full bg-black/50 border border-white/8 rounded-xl px-4 py-3 text-[13px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 transition-all" />
       </div>
       <div>
-        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">E-mail</label>
+        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('email')}</label>
         <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
           placeholder="joao@email.com"
           className="w-full bg-black/50 border border-white/8 rounded-xl px-4 py-3 text-[13px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 transition-all" />
       </div>
       <div>
-        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">WhatsApp</label>
+        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('registerWhatsApp')}</label>
         <input type="tel" required value={phone} onChange={e => setPhone(formatPhone(e.target.value))}
           placeholder="(11) 99999-9999"
           className="w-full bg-black/50 border border-white/8 rounded-xl px-4 py-3 text-[13px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 transition-all" />
       </div>
       <div>
-        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">Senha</label>
+        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('password')}</label>
         <div className="relative">
           <input type={showPwd ? 'text' : 'password'} required value={password}
-            onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6}
+            onChange={e => setPassword(e.target.value)} placeholder={t('pwdMinChars')} minLength={6}
             className="w-full bg-black/50 border border-white/8 rounded-xl px-4 py-3 pr-11 text-[13px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 transition-all" />
           <button type="button" onClick={() => setShowPwd(v => !v)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors">
@@ -161,12 +163,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess }) => {
         </div>
       </div>
       <div>
-        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2">Manter conectado</p>
+        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2">{t('keepConnected')}</p>
         <div className="flex gap-2">
           {(['7d', 'always'] as const).map(opt => (
             <button key={opt} type="button" onClick={() => setRemember(opt)}
               className={`flex-1 py-2 rounded-xl text-[11px] font-black uppercase transition-all border ${remember === opt ? 'bg-blue-600/20 border-blue-500/50 text-blue-300' : 'bg-white/5 border-white/8 text-slate-500 hover:border-white/20 hover:text-slate-300'}`}>
-              {opt === '7d' ? '7 dias' : 'Sempre'}
+              {opt === '7d' ? t('remember7d') : t('rememberAlways')}
             </button>
           ))}
         </div>
@@ -180,7 +182,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess }) => {
       <button type="submit" disabled={loading}
         className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-black text-[13px] uppercase tracking-wide bg-blue-600 hover:bg-blue-500 disabled:opacity-60 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.98]">
         {loading ? <Loader2 size={15} className="animate-spin" /> : <ChevronRight size={15} />}
-        {loading ? 'Criando conta...' : 'Criar minha conta grátis'}
+        {loading ? t('registerLoading') : t('registerSubmit')}
       </button>
     </form>
   );
@@ -194,6 +196,7 @@ interface LoginScreenProps {
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
+  const { t } = useLang();
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd]   = useState(false);
@@ -233,7 +236,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
           <Logo />
           <button onClick={onBack}
             className="flex items-center gap-1.5 text-[11px] font-black uppercase text-slate-400 hover:text-white transition-colors tracking-widest">
-            <ChevronLeft size={14} /> Voltar
+            <ChevronLeft size={14} /> {t('back')}
           </button>
         </div>
       </nav>
@@ -250,19 +253,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
               <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-500/30">
                 <RotateCcw size={24} className="text-white" />
               </div>
-              <h1 className="text-[20px] font-black text-white mb-1">Bem-vindo de volta</h1>
-              <p className="text-[12px] text-slate-500">Entre na sua conta para continuar</p>
+              <h1 className="text-[20px] font-black text-white mb-1">{t('loginWelcome')}</h1>
+              <p className="text-[12px] text-slate-500">{t('loginSubtitle')}</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">E-mail</label>
+                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('email')}</label>
                 <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
                   placeholder="seu@email.com" autoFocus
                   className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3.5 text-[13px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 focus:bg-black/70 transition-all" />
               </div>
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">Senha</label>
+                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">{t('password')}</label>
                 <div className="relative">
                   <input type={showPwd ? 'text' : 'password'} required value={password}
                     onChange={e => setPassword(e.target.value)} placeholder="••••••••"
@@ -276,12 +279,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
 
               {/* Remember */}
               <div>
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2">Manter conectado</p>
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2">{t('keepConnected')}</p>
                 <div className="flex gap-2">
                   {(['7d', 'always'] as const).map(opt => (
                     <button key={opt} type="button" onClick={() => setRemember(opt)}
                       className={`flex-1 py-2 rounded-xl text-[11px] font-black uppercase transition-all border ${remember === opt ? 'bg-blue-600/20 border-blue-500/50 text-blue-300' : 'bg-white/5 border-white/8 text-slate-500 hover:border-white/20 hover:text-slate-300'}`}>
-                      {opt === '7d' ? '7 dias' : 'Sempre'}
+                      {opt === '7d' ? t('remember7d') : t('rememberAlways')}
                     </button>
                   ))}
                 </div>
@@ -297,21 +300,21 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
               <button type="submit" disabled={loading}
                 className="w-full flex items-center justify-center gap-2 py-4 rounded-xl font-black text-[13px] uppercase tracking-wide bg-blue-600 hover:bg-blue-500 disabled:opacity-60 transition-all shadow-lg shadow-blue-500/25 active:scale-[0.98] mt-2">
                 {loading ? <Loader2 size={15} className="animate-spin" /> : <ChevronRight size={15} />}
-                {loading ? 'Entrando...' : 'Entrar'}
+                {loading ? t('loginSubmitting') : t('loginSubmit')}
               </button>
             </form>
 
             <p className="text-center text-[11px] text-slate-600 mt-6">
-              Não tem conta?{' '}
+              {t('landingNoAccount')}{' '}
               <button onClick={onBack} className="text-blue-400 hover:text-blue-300 font-black transition-colors">
-                Criar gratuitamente
+                {t('landingCreateFree')}
               </button>
             </p>
           </div>
 
           {/* Powered note */}
           <p className="text-center text-[10px] text-slate-700 mt-6">
-            Spot Replay · Feito para jogadores brasileiros
+            Spot Replay · {t('landingFooter')}
           </p>
         </div>
       </div>
@@ -322,6 +325,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onBack, onSuccess }) => {
 // ─── Landing Page (register mode) ────────────────────────────────────────────
 
 const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
+  const { t } = useLang();
   const [showLogin, setShowLogin] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -362,7 +366,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             <Logo />
             <button onClick={() => setShowLogin(true)}
               className="flex items-center gap-1.5 text-[11px] font-black uppercase text-slate-400 hover:text-white transition-colors tracking-widest">
-              Já tenho conta <ChevronRight size={13} />
+              {t('landingLogin')} <ChevronRight size={13} />
             </button>
           </div>
         </nav>
@@ -374,29 +378,28 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">
-                100% gratuito · sem download · direto no navegador
+                {t('landingBadge')}
               </span>
             </div>
 
             <div>
               <h1 className="text-4xl lg:text-5xl font-black leading-[1.1] text-white mb-5">
-                Revise suas mãos.<br />
+                {t('landingH1Line1')}<br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-                  Evolua de verdade.
+                  {t('landingH1Line2')}
                 </span>
               </h1>
               <p className="text-[16px] text-slate-400 leading-relaxed max-w-lg">
-                O replayer de poker profissional em português — sem pagar caro em dólar, sem instalar nada.
-                Importe seu histórico, assista cada jogada animada na mesa e anote cada erro.
+                {t('landingDesc')}
               </p>
             </div>
 
             <div className="flex gap-8 pt-2">
-              <StatBadge value="5+" label="Sites suportados" />
+              <StatBadge value="5+" label={t('landingStat1')} />
               <div className="w-px bg-white/8" />
-              <StatBadge value="100%" label="Gratuito" />
+              <StatBadge value="100%" label={t('landingStat2')} />
               <div className="w-px bg-white/8" />
-              <StatBadge value="IA" label="Coach integrada" />
+              <StatBadge value="IA" label={t('landingStat3')} />
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2">
@@ -408,7 +411,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             </div>
 
             <p className="text-[12px] text-slate-600 italic">
-              "Finalmente um replayer sério em português, sem mensalidade."
+              {t('landingQuote')}
             </p>
           </div>
 
@@ -417,15 +420,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
             <div className="bg-[#070c18] border border-white/10 rounded-[2rem] p-8 shadow-[0_30px_80px_rgba(0,0,0,0.7)] relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent" />
               <div className="mb-7">
-                <h2 className="text-[18px] font-black text-white mb-1">Criar conta gratuita</h2>
-                <p className="text-[12px] text-slate-500">Sem cartão. Sem dólar. Comece em 30 segundos.</p>
+                <h2 className="text-[18px] font-black text-white mb-1">{t('landingCreateCard')}</h2>
+                <p className="text-[12px] text-slate-500">{t('landingCardSub')}</p>
               </div>
               <RegisterForm onSuccess={onSuccess} />
               <p className="text-center text-[11px] text-slate-600 mt-4">
-                Já tem conta?{' '}
+                {t('landingHaveAccount')}{' '}
                 <button onClick={() => setShowLogin(true)}
                   className="text-blue-400 hover:text-blue-300 font-black transition-colors">
-                  Fazer login
+                  {t('landingDoLogin')}
                 </button>
               </p>
             </div>
@@ -436,36 +439,30 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
         <section className="border-t border-white/5 bg-white/[0.01]">
           <div className="max-w-6xl mx-auto px-6 py-24">
             <div className="text-center mb-14">
-              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-3">O que você ganha</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-3">{t('landingFeaturesTag')}</p>
               <h2 className="text-[28px] font-black text-white">
-                Tudo que você precisa para evoluir no poker
+                {t('landingFeaturesH2')}
               </h2>
             </div>
             <div className="grid md:grid-cols-3 gap-6">
               <FeatureCard icon={<Play size={22} className="text-blue-400" />}
                 accent="bg-blue-500/15 border border-blue-500/20"
-                title="Replay visual na mesa"
-                desc="Importe qualquer histórico e assista cada ação animada em uma mesa profissional, street por street, com velocidade ajustável." />
+                title={t('feat1Title')} desc={t('feat1Desc')} />
               <FeatureCard icon={<MessageSquare size={22} className="text-emerald-400" />}
                 accent="bg-emerald-500/15 border border-emerald-500/20"
-                title="Anotações por street"
-                desc="Anote erros e insights fixados em Pré-flop, Flop, Turn e River. Com tags, severidade e pin no step exato da ação." />
+                title={t('feat2Title')} desc={t('feat2Desc')} />
               <FeatureCard icon={<Sparkles size={22} className="text-violet-400" />}
                 accent="bg-violet-500/15 border border-violet-500/20"
-                title="Resumo inteligente com IA"
-                desc="A IA analisa as anotações, identifica padrões, erros recorrentes e gera um plano de estudo personalizado para você." />
+                title={t('feat3Title')} desc={t('feat3Desc')} />
               <FeatureCard icon={<Globe size={22} className="text-orange-400" />}
                 accent="bg-orange-500/15 border border-orange-500/20"
-                title="Multi-site"
-                desc="Suporta PokerStars, GGPoker, 888 Poker, PartyPoker e Bodog. Cole o histórico de qualquer formato." />
+                title={t('feat4Title')} desc={t('feat4Desc')} />
               <FeatureCard icon={<Layers size={22} className="text-sky-400" />}
                 accent="bg-sky-500/15 border border-sky-500/20"
-                title="Sessões de estudo"
-                desc="Agrupe mãos, filtre por posição, stack e resultado do herói. Encontre exatamente o spot que quer revisar." />
+                title={t('feat5Title')} desc={t('feat5Desc')} />
               <FeatureCard icon={<BarChart2 size={22} className="text-pink-400" />}
                 accent="bg-pink-500/15 border border-pink-500/20"
-                title="Pot Odds & Range Builder"
-                desc="Calcule pot odds em tempo real durante o replay e construa ranges com o editor visual integrado." />
+                title={t('feat6Title')} desc={t('feat6Desc')} />
             </div>
 
             {/* App preview screenshot — full width below features */}
@@ -482,15 +479,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
         {/* ── How it works ───────────────────────────────────────────── */}
         <section className="border-t border-white/5">
           <div className="max-w-3xl mx-auto px-6 py-24">
-            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-4 text-center">Como funciona</p>
-            <h2 className="text-[26px] font-black text-white mb-10 text-center">Em menos de 1 minuto você já está estudando</h2>
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-4 text-center">{t('landingHowTag')}</p>
+            <h2 className="text-[26px] font-black text-white mb-10 text-center">{t('landingHowH2')}</h2>
             <div className="space-y-7">
-              <Step n="1" title="Cole o histórico de mãos"
-                desc="Exporte o .txt do seu cliente (PokerStars, GGPoker etc.) e cole ou importe direto no Spot Replay." />
-              <Step n="2" title="Escolha a mão e assista"
-                desc="Navegue pelas mãos, use o player para avançar ação por ação ou ir direto para o showdown." />
-              <Step n="3" title="Anote, compartilhe e evolua"
-                desc="Registre seus erros por street, compartilhe com seu coach e receba feedback com anotações em tempo real." />
+              <Step n="1" title={t('step1Title')} desc={t('step1Desc')} />
+              <Step n="2" title={t('step2Title')} desc={t('step2Desc')} />
+              <Step n="3" title={t('step3Title')} desc={t('step3Desc')} />
             </div>
           </div>
         </section>
@@ -498,13 +492,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
         {/* ── Bottom CTA ─────────────────────────────────────────────── */}
         <section className="border-t border-white/5 bg-gradient-to-b from-blue-950/10 to-transparent">
           <div className="max-w-2xl mx-auto px-6 py-24 text-center">
-            <h2 className="text-[30px] font-black text-white mb-4">Pronto para estudar de verdade?</h2>
+            <h2 className="text-[30px] font-black text-white mb-4">{t('landingCtaTitle')}</h2>
             <p className="text-[14px] text-slate-500 mb-10 leading-relaxed">
-              Gratuito. Sem cartão de crédito. Sem dólar. Direto no navegador.
+              {t('landingCtaSub')}
             </p>
             <button onClick={scrollToForm}
               className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black text-[14px] uppercase tracking-wide transition-all shadow-lg shadow-blue-500/25 active:scale-[0.98]">
-              <RotateCcw size={16} /> Criar conta gratuita
+              <RotateCcw size={16} /> {t('landingCta')}
             </button>
           </div>
         </section>
@@ -514,7 +508,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSuccess }) => {
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <Logo />
             <p className="text-[10px] text-slate-700">
-              © {new Date().getFullYear()} Spot Replay · Feito para jogadores brasileiros
+              © {new Date().getFullYear()} Spot Replay · {t('landingFooter')}
             </p>
           </div>
         </footer>
