@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, Cloud, Users, Clock, Folder, Trash2, Share2, LogIn,
-  Loader2, AlertCircle, RefreshCw, CheckCircle2
+  Loader2, AlertCircle, RefreshCw, CheckCircle2, Bell
 } from 'lucide-react';
 import { HandHistory, ReplaySession, SessionMember } from '../types';
 import {
@@ -232,16 +232,29 @@ const SessionManager: React.FC<SessionManagerProps> = ({
             shared.length === 0
               ? <p className="text-center text-slate-600 text-[10px] uppercase font-black py-10">Nenhuma sessão compartilhada</p>
               : shared.map(s => (
-                  <div key={s.id} className="flex items-center gap-3 bg-white/[0.03] border border-white/5 rounded-2xl p-3 hover:border-white/10 transition-all">
-                    <Users size={18} className="text-purple-400 shrink-0" />
+                  <div key={s.id} className={`flex items-center gap-3 border rounded-2xl p-3 hover:border-white/10 transition-all ${s.reviewed_at ? 'bg-emerald-500/[0.04] border-emerald-500/20' : 'bg-white/[0.03] border-white/5'}`}>
+                    <div className="relative shrink-0">
+                      <Users size={18} className={s.reviewed_at ? 'text-emerald-400' : 'text-purple-400'} />
+                      {s.reviewed_at && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-[#02040a]" title="Revisão concluída pelo coach" />
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-[11px] font-black text-white truncate">{s.name}</p>
                         <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full ${s.my_role === 'coach' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
                           {s.my_role}
                         </span>
+                        {s.reviewed_at && (
+                          <span className="flex items-center gap-0.5 text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                            <CheckCircle2 size={8} /> Revisado
+                          </span>
+                        )}
                       </div>
-                      <p className="text-[8px] text-slate-500">por {s.owner_email} · {s.hand_count} mãos · {fmt(s.updated_at)}</p>
+                      <p className="text-[8px] text-slate-500">
+                        por {s.owner_email} · {s.hand_count} mãos · {fmt(s.updated_at)}
+                        {s.reviewed_at && ` · Coach concluiu em ${fmt(s.reviewed_at)}`}
+                      </p>
                     </div>
                     <button
                       onClick={() => handleOpen(s.id, s.my_role as any, s)}

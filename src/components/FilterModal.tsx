@@ -187,7 +187,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
       className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 backdrop-blur-xl p-6"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-md bg-[#0a0f1a] border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg bg-[#0a0f1a] border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">

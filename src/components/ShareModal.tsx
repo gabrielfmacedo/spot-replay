@@ -2,25 +2,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, Share2, Mail, Users, Trash2, Loader2, Copy, Check,
-  Shield, GraduationCap, AlertCircle, RefreshCw
+  Shield, GraduationCap, AlertCircle, RefreshCw, CheckCircle2, Clock
 } from 'lucide-react';
 import { ReplaySession, SessionMember } from '../types';
-import { getSessionMembers, inviteMember, removeMember } from '../services/collabService';
+import { getSessionMembers, inviteMember, removeMember, finalizeReview } from '../services/collabService';
 
 interface ShareModalProps {
   session: ReplaySession;
   onClose: () => void;
+  onReviewed?: (sessionId: string) => void;
 }
 
-const ShareModal: React.FC<ShareModalProps> = ({ session, onClose }) => {
-  const [members, setMembers]     = useState<SessionMember[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [email, setEmail]         = useState('');
-  const [role, setRole]           = useState<'coach' | 'student'>('student');
+const ShareModal: React.FC<ShareModalProps> = ({ session, onClose, onReviewed }) => {
+  const [members, setMembers]       = useState<SessionMember[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [email, setEmail]           = useState('');
+  const [role, setRole]             = useState<'coach' | 'student'>('student');
   const [canAnnotate, setCanAnnotate] = useState(true);
-  const [inviting, setInviting]   = useState(false);
+  const [inviting, setInviting]     = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [isReviewed, setIsReviewed] = useState(!!session.reviewed_at);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -66,6 +69,20 @@ const ShareModal: React.FC<ShareModalProps> = ({ session, onClose }) => {
     navigator.clipboard.writeText(url);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const handleFinalize = async () => {
+    if (!confirm('Marcar revisão como finalizada? Os alunos serão notificados.')) return;
+    setFinalizing(true); setError(null);
+    try {
+      await finalizeReview(session.id);
+      setIsReviewed(true);
+      onReviewed?.(session.id);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setFinalizing(false);
+    }
   };
 
   const roleIcon = (r: string) =>
@@ -169,6 +186,34 @@ const ShareModal: React.FC<ShareModalProps> = ({ session, onClose }) => {
           {error && (
             <div className="flex items-center gap-2 mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold">
               <AlertCircle size={13} /> {error}
+            </div>
+          )}
+        </div>
+
+        {/* Finalize review */}
+        <div className="px-6 py-3 border-b border-white/5 shrink-0">
+          {isReviewed ? (
+            <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+              <CheckCircle2 size={14} />
+              <div>
+                <p className="text-[10px] font-black uppercase">Revisão finalizada</p>
+                <p className="text-[8px] text-emerald-400/70">Alunos foram notificados</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black uppercase text-slate-400">Revisão da sessão</p>
+                <p className="text-[8px] text-slate-600">Notifica alunos quando concluir as anotações</p>
+              </div>
+              <button
+                onClick={handleFinalize}
+                disabled={finalizing}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl text-[9px] font-black uppercase text-white transition-all"
+              >
+                {finalizing ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                Finalizar
+              </button>
             </div>
           )}
         </div>

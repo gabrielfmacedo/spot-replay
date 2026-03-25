@@ -79,6 +79,7 @@ export interface ReplaySession {
   hand_count: number;
   created_at: string;
   updated_at: string;
+  reviewed_at?: string | null;
 }
 
 export interface SessionMember {
@@ -89,6 +90,11 @@ export interface SessionMember {
   role: 'coach' | 'student';
   can_annotate: boolean;
   status: 'pending' | 'accepted';
+}
+
+export interface StudyLink {
+  url: string;
+  label: string;
 }
 
 export interface HandAnnotation {
@@ -104,6 +110,7 @@ export interface HandAnnotation {
   street: string;        // 'GENERAL' | 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN'
   severity: 'info' | 'warning' | 'critical';
   step_index?: number;
+  study_links?: StudyLink[];
   updated_at: string;
 }
 

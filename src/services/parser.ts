@@ -823,7 +823,7 @@ function splitBlocks(text: string, format: RoomFormat): string[] {
   const splitters: Record<RoomFormat, RegExp> = {
     pokerstars: /(?=PokerStars Hand #)/i,
     ggpoker:    /(?=Poker Hand #)/i,
-    partypoker: /(?=\*{5} Hand(?:History| #| ID))/i,
+    partypoker: /(?=\*{5} Hand(?:History| #| ID)|Hand History for Game #)/i,
     '888':      /(?=888poker)/i,
     wpn:        /(?=Game #\d)/i,
     winamax:    /(?=Winamax Poker)/i,

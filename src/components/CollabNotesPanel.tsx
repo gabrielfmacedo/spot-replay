@@ -2,8 +2,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Star, Tag, Save, Loader2, Shield, GraduationCap,
-  MessageSquare, ChevronDown, ChevronUp, AlertTriangle, Info, AlertCircle, Sparkles
+  MessageSquare, ChevronDown, ChevronUp, AlertTriangle, Info, AlertCircle, Sparkles,
+  Link2, Plus, X, ExternalLink, BookOpen
 } from 'lucide-react';
+import { StudyLink } from '../types';
 import { HandAnnotation, ReplaySession } from '../types';
 import {
   getAnnotations, upsertAnnotation,
@@ -53,12 +55,16 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
   const [collapsed, setCollapsed]     = useState(false);
 
   // Own draft
-  const [text, setText]         = useState('');
-  const [tags, setTags]         = useState<string[]>([]);
-  const [starred, setStarred]   = useState(false);
-  const [street, setStreet]     = useState<string>('GENERAL');
-  const [severity, setSeverity] = useState<'info' | 'warning' | 'critical'>('info');
-  const [pinStep, setPinStep]   = useState(false);
+  const [text, setText]               = useState('');
+  const [tags, setTags]               = useState<string[]>([]);
+  const [starred, setStarred]         = useState(false);
+  const [street, setStreet]           = useState<string>('GENERAL');
+  const [severity, setSeverity]       = useState<'info' | 'warning' | 'critical'>('info');
+  const [pinStep, setPinStep]         = useState(false);
+  const [studyLinks, setStudyLinks]   = useState<StudyLink[]>([]);
+  const [linkUrl, setLinkUrl]         = useState('');
+  const [linkLabel, setLinkLabel]     = useState('');
+  const [showLinkInput, setShowLinkInput] = useState(false);
 
   const channelRef  = useRef<any>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,8 +86,9 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
       if (own) {
         setText(own.text); setTags(own.tags); setStarred(own.starred);
         setSeverity(own.severity ?? 'info');
+        setStudyLinks(own.study_links ?? []);
       } else {
-        setText(''); setTags([]); setStarred(false); setSeverity('info');
+        setText(''); setTags([]); setStarred(false); setSeverity('info'); setStudyLinks([]);
       }
     } catch (_) {
       // silent
@@ -105,6 +112,7 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
         if (ann.author_id === currentUser.id && ann.street === street) {
           setText(ann.text); setTags(ann.tags); setStarred(ann.starred);
           setSeverity(ann.severity ?? 'info');
+          setStudyLinks(ann.study_links ?? []);
         }
       },
       (id) => setAnnotations(prev => prev.filter(a => a.id !== id))
@@ -121,7 +129,7 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
       const roleName = userRole === 'owner' ? 'coach' : userRole;
       await upsertAnnotation(
         session.id, handKey,
-        { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined },
+        { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: studyLinks },
         currentUser.name || currentUser.email,
         roleName,
       );
@@ -135,6 +143,32 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
   }, [canAnnotate, text, tags, starred, street, severity, pinStep]); // eslint-disable-line
 
   const toggleTag = (t: string) => setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+
+  const addStudyLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    const label = linkLabel.trim() || url;
+    const newLinks = [...studyLinks, { url, label }];
+    setStudyLinks(newLinks);
+    setLinkUrl(''); setLinkLabel(''); setShowLinkInput(false);
+    // auto-save with new links
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (!canAnnotate) return;
+      const roleName = userRole === 'owner' ? 'coach' : userRole;
+      upsertAnnotation(
+        session.id, handKey,
+        { text, tags, starred, street, severity, step_index: pinStep ? currentStep : undefined, study_links: newLinks },
+        currentUser.name || currentUser.email,
+        roleName,
+      ).catch(() => {});
+    }, 300);
+  };
+
+  const removeStudyLink = (idx: number) => {
+    const newLinks = studyLinks.filter((_, i) => i !== idx);
+    setStudyLinks(newLinks);
+  };
 
   const othersAnnotations = annotations.filter(a => a.author_id !== currentUser.id);
   const coachAnnotations  = othersAnnotations.filter(a => a.author_role === 'coach' || a.author_role === 'owner');
@@ -180,6 +214,22 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
         )}
         {ann.step_index !== undefined && ann.step_index !== null && (
           <p className="text-[7px] text-slate-600 mt-1.5">📍 Marcado no step {ann.step_index}</p>
+        )}
+        {ann.study_links && ann.study_links.length > 0 && (
+          <div className="mt-2.5 pt-2 border-t border-white/5">
+            <p className="text-[7px] font-black uppercase text-emerald-500/70 tracking-widest mb-1.5 flex items-center gap-1">
+              <BookOpen size={8} /> Material de Estudo
+            </p>
+            <div className="space-y-1">
+              {ann.study_links.map((lk, i) => (
+                <a key={i} href={lk.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-[9px] text-emerald-400 hover:text-emerald-300 transition-colors">
+                  <ExternalLink size={9} className="shrink-0" />
+                  <span className="truncate">{lk.label}</span>
+                </a>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -299,6 +349,58 @@ const CollabNotesPanel: React.FC<CollabNotesPanelProps> = ({
                     <Tag size={7} /> {t}
                   </button>
                 ))}
+              </div>
+
+              {/* Study links */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[7px] font-black uppercase text-emerald-500/70 tracking-widest flex items-center gap-1">
+                    <BookOpen size={8} /> Material de Estudo
+                  </span>
+                  <button onClick={() => setShowLinkInput(v => !v)}
+                    className="flex items-center gap-0.5 text-[7px] font-black uppercase text-slate-500 hover:text-emerald-400 transition-colors">
+                    <Plus size={9} /> Adicionar link
+                  </button>
+                </div>
+                {studyLinks.map((lk, i) => (
+                  <div key={i} className="flex items-center gap-1.5 bg-emerald-500/5 border border-emerald-500/15 rounded-lg px-2 py-1.5">
+                    <ExternalLink size={9} className="text-emerald-400 shrink-0" />
+                    <span className="flex-1 text-[9px] text-emerald-400 truncate">{lk.label}</span>
+                    <button onClick={() => removeStudyLink(i)} className="text-slate-600 hover:text-red-400 transition-colors shrink-0">
+                      <X size={9} />
+                    </button>
+                  </div>
+                ))}
+                {showLinkInput && (
+                  <div className="space-y-1.5 bg-white/[0.03] border border-white/10 rounded-xl p-2.5">
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={linkUrl}
+                      onChange={e => setLinkUrl(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addStudyLink()}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-[10px] text-white outline-none focus:border-emerald-500/50 transition-colors"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Descrição (ex: Solver GTO para cbets)"
+                      value={linkLabel}
+                      onChange={e => setLinkLabel(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addStudyLink()}
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-[10px] text-white outline-none focus:border-emerald-500/50 transition-colors"
+                    />
+                    <div className="flex gap-1.5">
+                      <button onClick={() => { setShowLinkInput(false); setLinkUrl(''); setLinkLabel(''); }}
+                        className="flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase text-slate-500 hover:text-white bg-white/5 transition-colors">
+                        Cancelar
+                      </button>
+                      <button onClick={addStudyLink}
+                        className="flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1">
+                        <Link2 size={9} /> Adicionar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Save button */}

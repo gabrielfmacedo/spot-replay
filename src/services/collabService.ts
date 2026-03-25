@@ -1,6 +1,6 @@
 
 import { supabase } from './supabase';
-import { HandHistory, ReplaySession, SessionMember, HandAnnotation, HandNote } from '../types';
+import { HandHistory, ReplaySession, SessionMember, HandAnnotation, HandNote, StudyLink } from '../types';
 import type { PlayerNoteData } from '../components/PlayerNoteModal';
 import { migratePlayerNote } from '../components/PlayerNoteModal';
 
@@ -61,7 +61,7 @@ export async function getSharedSessions(): Promise<(ReplaySession & { my_role: s
   const ids = members.map(m => m.session_id);
   const { data: sessions, error } = await client
     .from('replay_sessions')
-    .select('id, owner_id, owner_email, name, room, hand_count, created_at, updated_at')
+    .select('id, owner_id, owner_email, name, room, hand_count, created_at, updated_at, reviewed_at')
     .in('id', ids)
     .order('updated_at', { ascending: false });
 
@@ -220,6 +220,7 @@ export async function upsertAnnotation(
     street?: string;
     severity?: 'info' | 'warning' | 'critical';
     step_index?: number;
+    study_links?: StudyLink[];
   },
   authorName: string,
   authorRole: string
@@ -243,6 +244,7 @@ export async function upsertAnnotation(
         street: payload.street ?? 'GENERAL',
         severity: payload.severity ?? 'info',
         step_index: payload.step_index ?? null,
+        study_links: payload.study_links ?? [],
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'session_id,hand_key,author_id,street' }
@@ -303,6 +305,31 @@ export function subscribeToAnnotations(
 
 export function unsubscribeChannel(channel: ReturnType<typeof subscribeToAnnotations>) {
   if (supabase && channel) supabase.removeChannel(channel);
+}
+
+// ── Coach review finalization ─────────────────────────────────────────────────
+
+export async function finalizeReview(sessionId: string): Promise<void> {
+  const { error } = await db()
+    .from('replay_sessions')
+    .update({ reviewed_at: new Date().toISOString() })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function subscribeToSession(
+  sessionId: string,
+  onUpdate: (session: Partial<ReplaySession>) => void
+) {
+  const client = db();
+  return client
+    .channel(`session:${sessionId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'replay_sessions', filter: `id=eq.${sessionId}` },
+      payload => onUpdate(payload.new as Partial<ReplaySession>)
+    )
+    .subscribe();
 }
 
 // ── Hand Notes (per-user, persisted in DB) ────────────────────────────────────
