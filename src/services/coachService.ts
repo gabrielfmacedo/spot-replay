@@ -102,14 +102,20 @@ export async function getMyCoach(): Promise<{ id: string; email: string } | null
 
   const { data } = await client
     .from('coach_students')
-    .select('coach_id, profiles!coach_students_coach_id_fkey(email)')
+    .select('coach_id')
     .eq('student_id', user.id)
     .limit(1)
     .maybeSingle();
 
   if (!data) return null;
-  const email = (data as any).profiles?.email ?? data.coach_id;
-  return { id: data.coach_id as string, email: email as string };
+
+  const { data: profile } = await client
+    .from('profiles')
+    .select('email')
+    .eq('id', data.coach_id)
+    .maybeSingle();
+
+  return { id: data.coach_id as string, email: (profile?.email ?? data.coach_id) as string };
 }
 
 /** Returns all students for the current coach. */
@@ -119,15 +125,24 @@ export async function getMyStudents(): Promise<{ id: string; email: string }[]> 
 
   const { data, error } = await client
     .from('coach_students')
-    .select('student_id, profiles!coach_students_student_id_fkey(email)')
+    .select('student_id')
     .eq('coach_id', user.id)
     .order('created_at', { ascending: false });
 
-  if (error) return [];
-  return (data ?? []).map((r: any) => ({
-    id: r.student_id as string,
-    email: r.profiles?.email ?? r.student_id,
-  }));
+  if (error || !data) return [];
+
+  // Fetch emails from profiles separately (no FK join needed)
+  const ids = data.map((r: any) => r.student_id as string);
+  if (ids.length === 0) return [];
+
+  const { data: profiles } = await client
+    .from('profiles')
+    .select('id, email')
+    .in('id', ids);
+
+  const emailMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.id, p.email]));
+
+  return ids.map(id => ({ id, email: emailMap[id] ?? id }));
 }
 
 /** Remove a student from the coach's roster. */
@@ -189,6 +204,13 @@ export async function submitReview(
   return { ...(data as ReviewSession), hands_count: hands.length };
 }
 
+/** Fetches emails for a list of user IDs from profiles. */
+async function fetchEmails(client: ReturnType<typeof db>, ids: string[]): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const { data } = await client.from('profiles').select('id, email').in('id', ids);
+  return Object.fromEntries((data ?? []).map((p: any) => [p.id, p.email]));
+}
+
 /** Coach sees all pending/annotating reviews. */
 export async function getCoachInbox(): Promise<ReviewSession[]> {
   const client = db();
@@ -196,17 +218,15 @@ export async function getCoachInbox(): Promise<ReviewSession[]> {
 
   const { data, error } = await client
     .from('review_sessions')
-    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at, profiles!review_sessions_student_id_fkey(email)')
+    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at')
     .eq('coach_id', user.id)
     .in('status', ['pending', 'annotating'])
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
-    ...r,
-    student_email: r.profiles?.email ?? r.student_id,
-    hands_count: undefined,
-  })) as ReviewSession[];
+  const rows = data ?? [];
+  const emails = await fetchEmails(client, rows.map((r: any) => r.student_id));
+  return rows.map((r: any) => ({ ...r, student_email: emails[r.student_id] ?? r.student_id })) as ReviewSession[];
 }
 
 /** Coach sees completed reviews. */
@@ -216,17 +236,16 @@ export async function getCoachDone(): Promise<ReviewSession[]> {
 
   const { data, error } = await client
     .from('review_sessions')
-    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at, profiles!review_sessions_student_id_fkey(email)')
+    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at')
     .eq('coach_id', user.id)
     .in('status', ['done', 'confirmed'])
     .order('finalized_at', { ascending: false })
     .limit(20);
 
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
-    ...r,
-    student_email: r.profiles?.email ?? r.student_id,
-  })) as ReviewSession[];
+  const rows = data ?? [];
+  const emails = await fetchEmails(client, rows.map((r: any) => r.student_id));
+  return rows.map((r: any) => ({ ...r, student_email: emails[r.student_id] ?? r.student_id })) as ReviewSession[];
 }
 
 /** Student sees their sent reviews. */
@@ -236,15 +255,14 @@ export async function getMyReviews(): Promise<ReviewSession[]> {
 
   const { data, error } = await client
     .from('review_sessions')
-    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at, profiles!review_sessions_coach_id_fkey(email)')
+    .select('id, student_id, coach_id, name, status, created_at, updated_at, finalized_at, student_confirmed_at')
     .eq('student_id', user.id)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
-    ...r,
-    coach_email: r.profiles?.email ?? r.coach_id,
-  })) as ReviewSession[];
+  const rows = data ?? [];
+  const emails = await fetchEmails(client, rows.map((r: any) => r.coach_id));
+  return rows.map((r: any) => ({ ...r, coach_email: emails[r.coach_id] ?? r.coach_id })) as ReviewSession[];
 }
 
 /** Loads hand history JSON from a review session. */

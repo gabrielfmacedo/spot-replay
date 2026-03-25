@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X, Copy, Check, RefreshCw, Loader2, AlertCircle,
   BookOpen, Send, Inbox, Users, BarChart2, ChevronRight,
   Sparkles, CheckCircle2, Clock, Link2, UserMinus,
-  FileText, Filter,
+  FileText, Filter, UserCheck,
 } from 'lucide-react';
 import {
   getOrCreateInviteToken, regenerateInviteToken,
@@ -59,7 +59,6 @@ function AISummary({ annotations }: { annotations: ReviewAnnotation[] }) {
   const generate = async () => {
     setLoading(true); setError(''); setText(''); setDone(false);
     try {
-      // Cast to HandAnnotation[] shape — fields are compatible
       await generateCoachSummary(
         annotations as unknown as HandAnnotation[],
         chunk => setText(chunk)
@@ -136,30 +135,35 @@ interface CoachPanelProps {
   onOpenReview: (reviewId: string, role: 'coach' | 'student', hands: HandHistory[], sessionName: string) => void;
   onFilterAnnotated: (reviewId: string | null) => void;
   onClose: () => void;
+  /** Token from ?coach_invite= URL param — pre-fills connect form. */
+  initialInviteToken?: string;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const CoachPanel: React.FC<CoachPanelProps> = ({
-  currentUser, currentHands, onOpenReview, onFilterAnnotated, onClose,
+  currentUser, currentHands, onOpenReview, onFilterAnnotated, onClose, initialInviteToken,
 }) => {
   // Role detection
-  const [myCoach, setMyCoach]     = useState<{ id: string; email: string } | null | undefined>(undefined);
+  const [myCoach, setMyCoach]       = useState<{ id: string; email: string } | null | undefined>(undefined);
   const [myStudents, setMyStudents] = useState<{ id: string; email: string }[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [tab, setTab]             = useState<'inbox' | 'students' | 'myreviews' | 'done'>('inbox');
+  const [loading, setLoading]       = useState(true);
+  const [tab, setTab]               = useState<'inbox' | 'students' | 'myreviews' | 'done'>('inbox');
 
   // Invite
   const [inviteToken, setInviteToken]   = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
-  const [connectToken, setConnectToken] = useState('');
+
+  // Connect to coach (student side)
+  const [connectToken, setConnectToken] = useState(initialInviteToken ?? '');
   const [connecting, setConnecting]     = useState(false);
   const [connectError, setConnectError] = useState('');
+  const [connectOk, setConnectOk]       = useState(false);
 
   // Reviews
-  const [inbox, setInbox]         = useState<ReviewSession[]>([]);
-  const [myReviews, setMyReviews] = useState<ReviewSession[]>([]);
-  const [doneList, setDoneList]   = useState<ReviewSession[]>([]);
+  const [inbox, setInbox]           = useState<ReviewSession[]>([]);
+  const [myReviews, setMyReviews]   = useState<ReviewSession[]>([]);
+  const [doneList, setDoneList]     = useState<ReviewSession[]>([]);
   const [listLoading, setListLoading] = useState(false);
 
   // Send HH form
@@ -170,15 +174,15 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
   const [sendOk, setSendOk]       = useState(false);
 
   // Open review detail
-  const [openReview, setOpenReview] = useState<ReviewSession | null>(null);
-  const [reviewAnns, setReviewAnns] = useState<ReviewAnnotation[]>([]);
+  const [openReview, setOpenReview]   = useState<ReviewSession | null>(null);
+  const [reviewAnns, setReviewAnns]   = useState<ReviewAnnotation[]>([]);
   const [annsLoading, setAnnsLoading] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [finalizing, setFinalizing]   = useState(false);
+  const [confirming, setConfirming]   = useState(false);
 
   // Misc
   const [err, setErr] = useState('');
-  const isCoach = myStudents.length > 0;
+  const isCoach   = myStudents.length > 0;
   const isStudent = myCoach !== undefined && myCoach !== null;
 
   // ── Load initial data ──────────────────────────────────────────────────────
@@ -192,7 +196,8 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
       if (students.length > 0) setTab('inbox');
       else if (coach) setTab('myreviews');
     } catch (e: any) {
-      setErr(e.message ?? 'Erro ao carregar dados.');
+      setErr(e.message ?? 'Erro ao carregar dados do servidor.');
+      setMyCoach(null);
     } finally { setLoading(false); }
   }, []);
 
@@ -201,20 +206,21 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
   const loadLists = useCallback(async () => {
     setListLoading(true);
     try {
-      if (isCoach || myStudents.length > 0) {
+      if (myStudents.length > 0) {
         const [i, d] = await Promise.all([getCoachInbox(), getCoachDone()]);
         setInbox(i); setDoneList(d);
       }
-      if (isStudent || myCoach) {
+      if (myCoach) {
         const r = await getMyReviews();
         setMyReviews(r);
       }
-    } finally { setListLoading(false); }
-  }, [isCoach, isStudent, myCoach, myStudents.length]);
+    } catch { /* non-critical */ }
+    finally { setListLoading(false); }
+  }, [myCoach, myStudents]);
 
   useEffect(() => {
-    if (!loading) loadLists();
-  }, [loading, loadLists]);
+    if (!loading && (isCoach || isStudent)) loadLists();
+  }, [loading, isCoach, isStudent, loadLists]);
 
   // ── Invite token ───────────────────────────────────────────────────────────
 
@@ -239,17 +245,21 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
   // ── Connect to coach ───────────────────────────────────────────────────────
 
   const handleConnect = async () => {
-    if (!connectToken.trim()) return;
-    setConnecting(true); setConnectError('');
+    const raw = connectToken.trim();
+    if (!raw) return;
+    setConnecting(true); setConnectError(''); setConnectOk(false);
     try {
-      const token = connectToken.trim().split('coach_invite=').pop() ?? connectToken.trim();
+      // Accept both full URL and raw token
+      const token = raw.includes('coach_invite=')
+        ? raw.split('coach_invite=').pop()!.split('&')[0]
+        : raw;
       const { coachEmail } = await acceptCoachInvite(token);
-      setMyCoach({ id: '', email: coachEmail });
+      setConnectOk(true);
       setConnectToken('');
       await loadAll();
       setTab('myreviews');
     } catch (e: any) {
-      setConnectError(e.message ?? 'Convite inválido.');
+      setConnectError(e.message ?? 'Convite inválido ou expirado.');
     } finally { setConnecting(false); }
   };
 
@@ -290,7 +300,7 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
     } finally { setAnnsLoading(false); }
   };
 
-  // ── Finalize ───────────────────────────────────────────────────────────────
+  // ── Finalize / Confirm ─────────────────────────────────────────────────────
 
   const handleFinalize = async () => {
     if (!openReview) return;
@@ -302,8 +312,6 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
     } catch (e: any) { setErr(e.message ?? 'Erro ao finalizar.'); }
     finally { setFinalizing(false); }
   };
-
-  // ── Confirm ────────────────────────────────────────────────────────────────
 
   const handleConfirm = async () => {
     if (!openReview) return;
@@ -321,8 +329,9 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
 
   const renderContent = () => {
     if (loading) return (
-      <div className="flex items-center justify-center py-16">
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
         <Loader2 size={20} className="animate-spin text-slate-600" />
+        <p className="text-[10px] text-slate-600">Carregando...</p>
       </div>
     );
 
@@ -333,7 +342,6 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
 
       return (
         <div className="space-y-4">
-          {/* Back + header */}
           <div className="flex items-center gap-2">
             <button onClick={() => { setOpenReview(null); onFilterAnnotated(null); }}
               className="text-[10px] font-black text-slate-500 hover:text-white transition-colors">
@@ -353,12 +361,10 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
             </p>
           </div>
 
-          {/* Loading annotations */}
           {annsLoading ? (
             <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-600" /></div>
           ) : (
             <div className="space-y-3">
-              {/* Stats */}
               <div className="grid grid-cols-3 gap-2 text-center">
                 {[
                   { label: 'Mãos', value: '—' },
@@ -372,27 +378,21 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
                 ))}
               </div>
 
-              {/* Filter annotated */}
               {annotatedKeys.size > 0 && (
-                <button
-                  onClick={() => onFilterAnnotated(openReview.id)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-300 text-[11px] font-black hover:bg-blue-600/20 transition-colors"
-                >
+                <button onClick={() => onFilterAnnotated(openReview.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-300 text-[11px] font-black hover:bg-blue-600/20 transition-colors">
                   <Filter size={11} /> Mostrar só mãos anotadas ({annotatedKeys.size})
                 </button>
               )}
 
-              {/* Export */}
               {reviewAnns.length > 0 && (
                 <AnnotationsExport annotations={reviewAnns} sessionName={openReview.name} />
               )}
 
-              {/* AI Summary — visible for student after done, or coach always */}
               {(role === 'coach' || openReview.status === 'done' || openReview.status === 'confirmed') && (
                 <AISummary annotations={reviewAnns} />
               )}
 
-              {/* Coach: finalize */}
               {role === 'coach' && (openReview.status === 'pending' || openReview.status === 'annotating') && (
                 <button onClick={handleFinalize} disabled={finalizing}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 font-black text-[12px] uppercase tracking-widest transition-colors">
@@ -407,7 +407,6 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
                 </div>
               )}
 
-              {/* Student: confirm */}
               {role === 'student' && openReview.status === 'done' && (
                 <button onClick={handleConfirm} disabled={confirming}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 font-black text-[12px] uppercase tracking-widest transition-colors">
@@ -418,7 +417,7 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
               {role === 'student' && openReview.status === 'confirmed' && (
                 <div className="flex items-center gap-2 bg-slate-500/10 border border-slate-500/20 rounded-xl px-3 py-2.5">
                   <CheckCircle2 size={13} className="text-slate-400" />
-                  <p className="text-[11px] text-slate-400 font-black">Review concluída em {openReview.student_confirmed_at ? new Date(openReview.student_confirmed_at).toLocaleDateString('pt-BR') : '—'}.</p>
+                  <p className="text-[11px] text-slate-400 font-black">Review concluída.</p>
                 </div>
               )}
               {role === 'student' && openReview.status === 'pending' && (
@@ -439,17 +438,72 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
       );
     }
 
+    // ── Pending invite banner (shown when user came via invite link) ────────
+    if (initialInviteToken && !isStudent && !connectOk) {
+      return (
+        <div className="space-y-4">
+          {/* Invite acceptance card */}
+          <div className="bg-blue-600/10 border border-blue-500/30 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center">
+                <UserCheck size={18} className="text-blue-400" />
+              </div>
+              <div>
+                <p className="text-[13px] font-black text-white">Convite de Coach</p>
+                <p className="text-[10px] text-slate-400">Você foi convidado para ser aluno</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Ao aceitar, seu coach poderá revisar suas mãos e enviar feedback.
+            </p>
+            {connectError && (
+              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                <AlertCircle size={11} className="text-red-400 shrink-0" />
+                <p className="text-[11px] text-red-300">{connectError}</p>
+              </div>
+            )}
+            <button onClick={handleConnect} disabled={connecting}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 font-black text-[12px] uppercase tracking-widest transition-colors">
+              {connecting ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
+              {connecting ? 'Conectando...' : 'Aceitar Convite'}
+            </button>
+          </div>
+          {/* Divider — also allow manual paste in case token pre-fill failed */}
+          <div className="space-y-2">
+            <p className="text-[9px] text-slate-600 uppercase tracking-widest text-center">ou cole outro link</p>
+            <div className="flex gap-2">
+              <input value={connectToken} onChange={e => setConnectToken(e.target.value)}
+                placeholder="Cole o link ou token aqui..."
+                className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50" />
+              <button onClick={handleConnect} disabled={connecting || !connectToken.trim()}
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white disabled:opacity-40 transition-colors">
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // ── No relationships yet ───────────────────────────────────────────────
     if (!isCoach && !isStudent) {
       return (
-        <div className="space-y-6 py-2">
-          {/* Coach side: generate invite link */}
+        <div className="space-y-5 py-2">
+          {/* Success after connect */}
+          {connectOk && (
+            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+              <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+              <p className="text-[11px] text-emerald-300 font-black">Conectado com sucesso! Agora envie suas mãos para revisão.</p>
+            </div>
+          )}
+
+          {/* Coach side */}
           <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 space-y-3">
             <p className="text-[11px] font-black text-white flex items-center gap-2">
               <Users size={13} className="text-blue-400" /> Sou Coach
             </p>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Gere seu link de convite e compartilhe com seus alunos. Quando eles aceitarem, poderão enviar mãos para você revisar.
+              Gere seu link de convite e envie para seus alunos.
             </p>
             {!inviteToken ? (
               <button onClick={loadToken} disabled={tokenLoading}
@@ -471,17 +525,18 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
             )}
           </div>
 
-          {/* Student side: connect to coach */}
+          {/* Student side */}
           <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 space-y-3">
             <p className="text-[11px] font-black text-white flex items-center gap-2">
               <BookOpen size={13} className="text-emerald-400" /> Sou Aluno
             </p>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Cole o link de convite que seu coach compartilhou.
+              Cole o link de convite enviado pelo seu coach.
             </p>
             <input
               value={connectToken}
               onChange={e => setConnectToken(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleConnect()}
               placeholder="Cole o link ou o token aqui..."
               className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition-colors"
             />
@@ -534,7 +589,6 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
     if (tab === 'students') {
       return (
         <div className="space-y-4">
-          {/* Invite link */}
           <div className="bg-white/[0.03] border border-white/8 rounded-xl p-4 space-y-2">
             <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Seu link de convite</p>
             {!inviteToken ? (
@@ -544,17 +598,18 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
                 Carregar link
               </button>
             ) : (
-              <div className="flex items-center gap-2">
-                <p className="text-[10px] text-slate-400 font-mono flex-1 truncate">{inviteLink}</p>
-                <CopyButton text={inviteLink} />
-                <button onClick={regenToken} disabled={tokenLoading} title="Regenerar">
-                  <RefreshCw size={11} className="text-slate-600 hover:text-slate-400 transition-colors" />
-                </button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] text-slate-400 font-mono flex-1 truncate">{inviteLink}</p>
+                  <CopyButton text={inviteLink} />
+                  <button onClick={regenToken} disabled={tokenLoading} title="Regenerar">
+                    <RefreshCw size={11} className="text-slate-600 hover:text-slate-400 transition-colors" />
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Student list */}
           {myStudents.length === 0 ? (
             <p className="text-center text-[11px] text-slate-600 py-6">Nenhum aluno ainda.</p>
           ) : myStudents.map(s => (
@@ -577,22 +632,32 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
     if (tab === 'myreviews') {
       return (
         <div className="space-y-3">
-          {/* Send HH */}
           {myCoach && (
             <div className="bg-blue-600/10 border border-blue-500/20 rounded-xl p-3 space-y-3">
               {!showSend ? (
-                <button onClick={() => setShowSend(true)} disabled={currentHands.length === 0}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 font-black text-[11px] uppercase tracking-widest transition-colors">
-                  <Send size={11} /> Enviar mãos para {myCoach.email}
-                </button>
+                <>
+                  <button onClick={() => setShowSend(true)} disabled={currentHands.length === 0}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 font-black text-[11px] uppercase tracking-widest transition-colors">
+                    <Send size={11} /> Enviar mãos para revisão
+                  </button>
+                  <p className="text-[10px] text-slate-500 text-center">Coach: {myCoach.email}</p>
+                  {currentHands.length === 0 && (
+                    <p className="text-[10px] text-slate-600 text-center">Importe um histórico de mãos primeiro.</p>
+                  )}
+                </>
               ) : (
                 <div className="space-y-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome da review</p>
                   <input value={sendName} onChange={e => setSendName(e.target.value)}
                     placeholder={`Review ${new Date().toLocaleDateString('pt-BR')}`}
                     className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-blue-500/50" />
-                  <p className="text-[10px] text-slate-500">{currentHands.length} mãos importadas serão enviadas.</p>
+                  <p className="text-[10px] text-slate-500">{currentHands.length} mãos serão enviadas.</p>
                   {sendError && <p className="text-[10px] text-red-400">{sendError}</p>}
-                  {sendOk && <p className="text-[10px] text-emerald-400 flex items-center gap-1"><Check size={10} /> Enviado!</p>}
+                  {sendOk && (
+                    <div className="flex items-center gap-1 text-[11px] text-emerald-400">
+                      <CheckCircle2 size={12} /> Enviado com sucesso!
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={handleSend} disabled={sending || currentHands.length === 0}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 font-black text-[11px] transition-colors">
@@ -606,13 +671,9 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
                   </div>
                 </div>
               )}
-              {currentHands.length === 0 && !showSend && (
-                <p className="text-[10px] text-slate-600 text-center">Importe um histórico primeiro.</p>
-              )}
             </div>
           )}
 
-          {/* Reviews list */}
           {listLoading ? (
             <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-600" /></div>
           ) : myReviews.length === 0 ? (
@@ -623,7 +684,7 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
                 <p className="text-[12px] font-black text-white truncate">{s.name}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">
                   {new Date(s.created_at).toLocaleDateString('pt-BR')}
-                  {s.finalized_at && ` · Coach finalizou ${new Date(s.finalized_at).toLocaleDateString('pt-BR')}`}
+                  {s.finalized_at && ` · Finalizado ${new Date(s.finalized_at).toLocaleDateString('pt-BR')}`}
                 </p>
               </div>
               <StatusBadge status={s.status} />
@@ -636,9 +697,8 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
             </div>
           ))}
 
-          {/* Leave coach */}
           {myCoach && (
-            <button onClick={async () => { await leaveCoach(); setMyCoach(null); setTab('inbox'); }}
+            <button onClick={async () => { await leaveCoach(); setMyCoach(null); await loadAll(); }}
               className="w-full text-[9px] text-slate-700 hover:text-red-400 transition-colors pt-2">
               Desvincular do coach
             </button>
@@ -653,9 +713,9 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
   // ── Tab bar ────────────────────────────────────────────────────────────────
 
   const coachTabs = isCoach ? [
-    { id: 'inbox',    label: 'Pendentes', icon: <Inbox size={10} />, count: inbox.length },
-    { id: 'students', label: 'Alunos',    icon: <Users size={10} />, count: myStudents.length },
-    { id: 'done',     label: 'Concluídas',icon: <BarChart2 size={10} />, count: 0 },
+    { id: 'inbox',    label: 'Pendentes',  icon: <Inbox size={10} />,    count: inbox.length },
+    { id: 'students', label: 'Alunos',     icon: <Users size={10} />,    count: myStudents.length },
+    { id: 'done',     label: 'Concluídas', icon: <BarChart2 size={10} />, count: 0 },
   ] : [];
 
   const studentTabs = isStudent ? [
@@ -665,8 +725,10 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
   const allTabs = [...coachTabs, ...studentTabs];
 
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md bg-[#070c18] border border-white/10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[85vh]">
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 shrink-0">
           <div>
@@ -710,6 +772,7 @@ const CoachPanel: React.FC<CoachPanelProps> = ({
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-3">
               <AlertCircle size={12} className="text-red-400 shrink-0" />
               <p className="text-[11px] text-red-300">{err}</p>
+              <button onClick={() => setErr('')} className="ml-auto text-slate-600 hover:text-white"><X size={11} /></button>
             </div>
           )}
           {renderContent()}

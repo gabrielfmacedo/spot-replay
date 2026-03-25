@@ -735,13 +735,26 @@ function parseIgnitionHand(block: string): HandHistory | null {
     const resultM = rest.match(/^Hand Result(?:-Side Pot)? ([\d,]+)/i);
     if (resultM) { actions.push({ playerName: actorName, type: 'COLLECTED', amount: ignNum(resultM[1]), street: currentStreet }); continue; }
 
-    // Showdown: "Showdown [cards] (rank)"
+    // Showdown: "Showdown [Kh Kd Qs Qd Ac] (Two pair)"
+    // Ignition shows the best 5-card combination, NOT the hole cards.
+    // Hole cards were already stored in player.cards via "Card dealt to a spot".
     const showM = rest.match(/^Showdown \[([^\]]+)\]/i);
-    if (showM) { actions.push({ playerName: actorName, type: 'SHOWS', cards: parseCards(showM[1]), street: currentStreet }); continue; }
+    if (showM) {
+      // Prefer already-parsed 2-card hole cards; fall back to first 2 of the 5-card line
+      const cards = (player?.cards?.length === 2) ? player.cards : parseCards(showM[1]).slice(0, 2);
+      actions.push({ playerName: actorName, type: 'SHOWS', cards, street: currentStreet });
+      continue;
+    }
 
     // Mucks or "Does not show" — cards still visible in HH, treat as SHOWS
     const mucksM = rest.match(/^(?:Mucks|Does not show) \[([^\]]+)\]/i);
-    if (mucksM) { actions.push({ playerName: actorName, type: 'SHOWS', cards: parseCards(mucksM[1]), street: currentStreet }); continue; }
+    if (mucksM) {
+      const parsed = parseCards(mucksM[1]);
+      // If 5 cards, it's a best-hand combo — prefer hole cards from player.cards
+      const cards = parsed.length > 2 && player?.cards?.length === 2 ? player.cards : parsed.slice(0, 2);
+      actions.push({ playerName: actorName, type: 'SHOWS', cards, street: currentStreet });
+      continue;
+    }
 
     // Folds (plain, timeout, disconnect variants)
     if (/^Folds?(?:\(|$)/i.test(rest) || /^Fold(?:\(|$)/i.test(rest)) {

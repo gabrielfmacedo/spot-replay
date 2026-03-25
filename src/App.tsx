@@ -1,4 +1,7 @@
 
+// ── Feature flags ─────────────────────────────────────────────────────────────
+const COACH_ENABLED = false; // set true to enable coach mode UI
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, RotateCcw,
@@ -26,6 +29,7 @@ import ShareModal from './components/ShareModal';
 import CollabNotesPanel from './components/CollabNotesPanel';
 import CoachSummaryModal from './components/CoachSummaryModal';
 import CoachPanel from './components/coach/CoachPanel';
+import CoachNotePanel from './components/coach/CoachNotePanel';
 import FilterModal, { type NumericFilter } from './components/FilterModal';
 import NotificationBell from './components/NotificationBell';
 import NotificationToast from './components/NotificationToast';
@@ -197,6 +201,7 @@ const App: React.FC = () => {
   const [collabAnnotations, setCollabAnnotations] = useState<Record<string, HandAnnotation[]>>({});
   const [showAISummary,    setShowAISummary]     = useState(false);
   const [showCoachPanel,   setShowCoachPanel]    = useState(false);
+  const [coachInviteToken,  setCoachInviteToken]  = useState<string | null>(null);
   const [activeReview,     setActiveReview]      = useState<{ id: string; role: 'coach' | 'student'; name: string } | null>(null);
   const [reviewAnnotations, setReviewAnnotations] = useState<Record<string, ReviewAnnotation[]>>({});
   const [filterAnnotatedReviewId, setFilterAnnotatedReviewId] = useState<string | null>(null);
@@ -254,6 +259,8 @@ const App: React.FC = () => {
         loadNotesFromDB(u.id);
         // Fetch admin role
         Promise.resolve(supabase.rpc('is_admin')).then(({ data }) => setIsAdmin(!!data)).catch(() => setIsAdmin(false));
+        // Open coach panel if there's a pending invite token
+        setCoachInviteToken(prev => { if (prev) setShowCoachPanel(true); return prev; });
       } else {
         prevUserId = null;
         setCurrentUser(null);
@@ -352,10 +359,11 @@ const App: React.FC = () => {
       setShowSessionMgr(true);
       return;
     }
-    // Check for ?coach_invite=TOKEN — open coach panel to accept invite
+    // Check for ?coach_invite=TOKEN — store token, open coach panel after auth
     const coachInviteParam = params.get('coach_invite');
     if (coachInviteParam) {
       window.history.replaceState(null, '', window.location.pathname);
+      setCoachInviteToken(coachInviteParam);
       setShowCoachPanel(true);
       return;
     }
@@ -1316,7 +1324,7 @@ const App: React.FC = () => {
               </div>
             )}
             {/* Coach button */}
-            {currentUser && (
+            {COACH_ENABLED && currentUser && (
               <button
                 onClick={() => setShowCoachPanel(true)}
                 className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors border ${
@@ -1701,31 +1709,26 @@ const App: React.FC = () => {
 
               {/* ── Review mode note panel (coach annotates review_sessions) ── */}
               {showNotePanel && currentHand && activeReview && !cloudSession && currentUser && (
-                <div className="w-[95%] max-w-4xl mb-1 bg-[#0a0f1a]/95 backdrop-blur-3xl border border-white/10 rounded-[1.5rem] shadow-2xl overflow-hidden z-[249] shrink-0">
-                  <CollabNotesPanel
-                    session={{ id: activeReview.id, owner_id: currentUser.id, owner_email: currentUser.email, name: activeReview.name, room: null, hand_count: 0, created_at: '', updated_at: '' }}
+                <div className="flex justify-end w-[95%] max-w-4xl mb-1 shrink-0">
+                  <CoachNotePanel
+                    reviewId={activeReview.id}
                     handKey={handKey}
+                    role={activeReview.role}
                     currentUser={currentUser}
-                    userRole={activeReview.role === 'coach' ? 'coach' : 'student'}
-                    canAnnotate={activeReview.role === 'coach'}
                     currentStreet={gameState.street}
                     currentStep={currentStep}
-                    allAnnotations={Object.values(reviewAnnotations).flat() as any}
-                    onSaveOverride={async payload => {
-                      const ann = await upsertReviewAnnotation(
-                        activeReview.id, handKey, payload,
-                        currentUser.name || currentUser.email,
-                        activeReview.role
-                      );
-                      // Update local index
+                    existingAnnotation={reviewAnnotations[handKey]?.find(
+                      a => a.author_id === currentUser.id
+                    )}
+                    onSaved={ann => {
                       setReviewAnnotations(prev => {
                         const existing = prev[handKey] ?? [];
-                        const idx = existing.findIndex(a => a.review_session_id === ann.review_session_id && a.hand_key === ann.hand_key && a.author_id === ann.author_id && a.street === ann.street);
+                        const idx = existing.findIndex(a => a.author_id === ann.author_id && a.street === ann.street);
                         const updated = idx >= 0 ? existing.map((a, i) => i === idx ? ann : a) : [...existing, ann];
                         return { ...prev, [handKey]: updated };
                       });
-                      return ann as any;
                     }}
+                    onClose={() => setShowNotePanel(false)}
                   />
                 </div>
               )}
@@ -1882,8 +1885,8 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* ── Floating Hand Note (draggable, solo mode only) ────────────────────── */}
-      {showNotePanel && currentHand && !cloudSession && (
+      {/* ── Floating Hand Note (solo mode only — not in review mode) ─────────── */}
+      {showNotePanel && currentHand && !cloudSession && !activeReview && (
         <FloatingHandNote
           handKey={handKey}
           note={handNotes[handKey]}
@@ -2016,10 +2019,19 @@ const App: React.FC = () => {
       )}
 
       {/* ── Coach Panel ───────────────────────────────────────────────────────── */}
-      {showCoachPanel && currentUser && (
+      {/* If user tries to open invite but isn't logged in, show auth first */}
+      {COACH_ENABLED && authChecked && showCoachPanel && !currentUser && (
+        <AuthModal
+          onSuccess={user => { setCurrentUser(user); setShowAuthModal(false); }}
+          onClose={() => { setShowCoachPanel(false); setCoachInviteToken(null); }}
+        />
+      )}
+
+      {COACH_ENABLED && showCoachPanel && currentUser && (
         <CoachPanel
           currentUser={currentUser}
           currentHands={hands}
+          initialInviteToken={coachInviteToken ?? undefined}
           onOpenReview={async (reviewId, role, reviewHands, sessionName) => {
             setHands(reviewHands);
             setCurrentHandIndex(0);
@@ -2053,7 +2065,7 @@ const App: React.FC = () => {
             setFilterAnnotatedReviewId(reviewId);
             setShowCoachPanel(false);
           }}
-          onClose={() => setShowCoachPanel(false)}
+          onClose={() => { setShowCoachPanel(false); setCoachInviteToken(null); }}
         />
       )}
 
